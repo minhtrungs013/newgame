@@ -332,9 +332,25 @@ function toggleMenu(open = !menuOpen) {
   menuOpen = open;
   $('menu').classList.toggle('hidden', !open);
   state.keys.clear(); // don't keep walking with a key that was held when the menu opened
-  if (open) $('m-resume').focus();
+  if (open) {
+    // logged in: log out; guest: just go back to the start screen
+    $('m-logout').textContent = account.username ? `Đăng xuất (${account.username})` : 'Về màn hình chính';
+    $('m-resume').focus();
+  }
 }
 $('m-resume').addEventListener('click', () => toggleMenu(false));
+$('m-logout').addEventListener('click', async () => {
+  $('m-logout').disabled = true;
+  // send the latest state, then disconnect: the server saves the account when the socket closes
+  net.update(1, cow, camera, { xp: state.xp, food: state.food, water: state.water, health: state.health });
+  await new Promise((r) => setTimeout(r, 150));
+  const token = account.token;
+  if (token) {
+    try { localStorage.removeItem('cow.token'); } catch {}
+    await api('/api/logout', { token }).catch(() => {});
+  }
+  location.reload();
+});
 $('m-invite').addEventListener('click', () => { toggleMenu(false); openInvite(); });
 // clicking the dark backdrop also closes the menu
 $('menu').addEventListener('pointerdown', (e) => { if (e.target === $('menu')) toggleMenu(false); });

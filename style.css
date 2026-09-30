@@ -385,3 +385,6 @@ body.hide-tags #tags .nametag:not(.self) .name { display: none; }
 .death-card button.secondary { background: rgba(255,255,255,.14); color: #fff; }
 .death-card button.secondary:hover { background: rgba(255,255,255,.22); }
 #bar-grow { background: linear-gradient(90deg, #8a6ae8, #d0a8ff); }
+.menu-actions .m-spacer { flex: 1; }
+.menu-actions button.m-danger { background: rgba(220, 80, 70, .18); color: #f4b8b0; border: 1px solid rgba(220, 80, 70, .45); }
+.menu-actions button.m-danger:hover { background: rgba(220, 80, 70, .3); color: #fff; }
