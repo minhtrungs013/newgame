@@ -15,7 +15,7 @@ import { Net, NameTag } from './net.js';
 import { Customizer } from './customize.js';
 import { ClanPanel } from './clan-ui.js';
 import { MAX_COWS } from './grass.js';
-import { WEATHERS } from './environment.js';
+import { WEATHERS, SEASON_ORDER, SEASON_INFO, WEATHER_NAMES } from './environment.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -125,8 +125,54 @@ class Rain {
 }
 const rain = new Rain();
 
-// ---------- drifting leaves / petals ----------
-const LEAVES = 90;
+// ---------- snowfall (winter "rain") ----------
+class Snow {
+  constructor(count = 2500) {
+    this.count = count;
+    this.flakes = new Float32Array(count * 4); // x, y, z, phase
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+    // soft round flake sprite
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const g = c.getContext('2d'), rg = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(0.5, 'rgba(255,255,255,.6)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = rg; g.fillRect(0, 0, 32, 32);
+    this.mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.12, map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false });
+    this.points = new THREE.Points(geo, this.mat);
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+    for (let i = 0; i < count; i++) this._reset(i, camera.position, true);
+  }
+  _reset(i, c, anyY) {
+    const d = this.flakes;
+    d[i * 4] = c.x + (Math.random() - 0.5) * 50;
+    d[i * 4 + 2] = c.z + (Math.random() - 0.5) * 50;
+    d[i * 4 + 1] = c.y + (anyY ? (Math.random() - 0.4) * 30 : 12 + Math.random() * 8);
+    d[i * 4 + 3] = Math.random() * 10;
+  }
+  update(dt, amount, wind, windDir) {
+    this.points.visible = amount > 0.02;
+    this.mat.opacity = 0.85 * amount;
+    if (!this.points.visible) return;
+    const d = this.flakes, p = this.points.geometry.attributes.position.array, c = camera.position;
+    const active = Math.floor(this.count * amount);
+    for (let i = 0; i < this.count; i++) {
+      const o = i * 4;
+      d[o + 3] += dt;
+      d[o] += (windDir.x * wind * 1.2 + Math.sin(d[o + 3] * 1.3) * 0.4) * dt;
+      d[o + 2] += (windDir.y * wind * 1.2 + Math.cos(d[o + 3] * 1.1) * 0.4) * dt;
+      d[o + 1] -= (1.2 + (i % 7) * 0.12) * dt;
+      if (d[o + 1] < c.y - 12 || Math.abs(d[o] - c.x) > 26 || Math.abs(d[o + 2] - c.z) > 26 || d[o + 1] < heightAt(d[o], d[o + 2])) this._reset(i, c, false);
+      const hide = i >= active ? -1000 : 0;
+      p[i * 3] = d[o]; p[i * 3 + 1] = d[o + 1] + hide; p[i * 3 + 2] = d[o + 2];
+    }
+    this.points.geometry.attributes.position.needsUpdate = true;
+  }
+}
+const snow = new Snow();
+
+// ---------- drifting leaves / petals (colour & amount follow the season) ----------
+const LEAVES = 220;
 const leafGeo = new THREE.PlaneGeometry(0.1, 0.06);
 const leafMat = new THREE.MeshStandardMaterial({ color: 0xe0c050, side: THREE.DoubleSide, roughness: 0.8 });
 const leaves = new THREE.InstancedMesh(leafGeo, leafMat, LEAVES);
@@ -284,7 +330,12 @@ $('sel-weather').addEventListener('change', (e) => {
 });
 $('sel-time').addEventListener('change', (e) => {
   if (net.connected) net.send({ t: 'env', time: e.target.value });
-  else env.setTime(e.target.value);
+  else env.hour = { morning: 7.9, noon: 12.5, sunset: 18.35, night: 23 }[e.target.value] ?? env.hour;
+  e.target.blur();
+});
+$('sel-season').addEventListener('change', (e) => {
+  if (net.connected) net.send({ t: 'env', season: e.target.value });
+  else { env.season = e.target.value; env.seasonT = 0.05; }
   e.target.blur();
 });
 $('btn-sound').addEventListener('click', (e) => { setSetting('sound', !settings.sound); e.target.blur(); });
@@ -670,18 +721,20 @@ function addChat(name, text, system = false, clan = null) {
 
 // ---------- networking ----------
 function applyEnv(m, instant) {
-  env.setWeather(m.weather);
-  if (m.time === 'cycle') {
-    env.setTime('cycle');
-    if (Math.abs(env.hour - m.hour) > 0.5) env.hour = m.hour;
-  } else env.setTime(m.time);
-  if (instant) {
-    env.weather = { ...WEATHERS[m.weather] };
-    env.hour = m.hour;
-  }
+  const prevSeason = env.season, prevWeather = env.weatherName;
+  env.applyServer(m, instant);
   $('sel-weather').value = m.weather;
-  $('sel-time').value = m.time;
+  if (m.season) $('sel-season').value = m.season;
+  if (!instant && m.season && m.season !== prevSeason) {
+    const si = SEASON_INFO[m.season];
+    toast(`${si.icon} Mùa ${si.name.toLowerCase()} đã đến!`);
+  } else if (!instant && m.weather !== prevWeather) {
+    toast(`${weatherIcon(m.weather)} Thời tiết: ${weatherLabel(m.weather)}`);
+  }
 }
+const isWinter = () => env.s.snow > 0.5;
+const weatherLabel = (w) => (w === 'rain' && isWinter() ? 'Tuyết rơi' : WEATHER_NAMES[w]);
+const weatherIcon = (w) => (w === 'rain' ? (isWinter() ? '🌨️' : '🌧️') : w === 'cloudy' ? '☁️' : w === 'fog' ? '🌫️' : env.dayness > 0.5 ? '☀️' : '🌙');
 const net = new Net(scene, $('tags'), {
   onStatus(s) {
     $('net-dot').className = 'dot ' + s;
@@ -788,7 +841,7 @@ const net = new Net(scene, $('tags'), {
   },
   onEnv(m) {
     applyEnv(m, false);
-    if (m.by) toast(`${m.by}: ${$('sel-weather').selectedOptions[0].text} · ${$('sel-time').selectedOptions[0].text}`);
+    if (m.by) toast(`${m.by} đã chỉnh thời tiết / thời gian`);
   },
 });
 let toastTimer = 0;
@@ -1062,7 +1115,7 @@ function updateCow(dt) {
   const rest = cow.isDown ? 0.4 : 1; // resting cows get hungry / thirsty more slowly
   // full -> empty: food ~13 min standing (~5 min running), water ~10 min (~4 min running)
   const effort = Math.abs(cow.speed);
-  state.food = Math.max(0, state.food - dt * (0.0013 + effort * 0.0005) * rest);
+  state.food = Math.max(0, state.food - dt * (0.0013 + effort * 0.0005) * rest * env.s.hunger);
   state.water = Math.max(0, state.water - dt * (0.0016 + effort * 0.0006) * rest);
   // thirsty: shrink too
   if (state.started && state.water <= 0.02) {
@@ -1120,8 +1173,12 @@ function updateCamera(dt) {
 function updateEnvironment(dt) {
   env.update(dt);
   const w = env.weather;
-  // lightning in heavy rain
-  if (w.rain > 0.8) {
+  const S = env.s;
+  const snowK = S.snowing;              // rain that falls as snow
+  const rainK = Math.max(0, w.rain - snowK);
+  env.rainSound = rainK;                 // snow is silent
+  // lightning in heavy rain (never during snowfall)
+  if (rainK > 0.8) {
     state.lightningTimer -= dt;
     if (state.lightningTimer < 0) {
       state.lightningTimer = 12 + Math.random() * 25;
@@ -1178,7 +1235,13 @@ function updateEnvironment(dt) {
   g.uSunDir.value.copy(ld);
   g.uSunColor.value.copy(env.sunColor).multiplyScalar(env.sunI * 0.55);
   g.uAmbient.value.copy(env.ambient).multiplyScalar(env.ambI * 0.75);
-  g.uWet.value = w.rain;
+  g.uWet.value = rainK;
+  g.uSeasonTint.value.set(...S.grass);
+  g.uSnow.value = S.snow;
+  g.uFlowerAmt.value = S.flowers;
+  terrain.seasonUniforms.uSnow.value = S.snow;
+  terrain.seasonUniforms.uTint.value.set(...S.grass).lerp(new THREE.Vector3(1, 1, 1), 0.5);
+  world.materials.foliage.color.setRGB(...S.foliage);
 
   state.obstacleTimer -= dt;
   if (state.obstacleTimer < 0) {
@@ -1188,10 +1251,12 @@ function updateEnvironment(dt) {
     g.uPondCount.value = fillPondUniforms(cow.pos.x, cow.pos.z, g.uPonds.value, g.uPondLevel.value, patchR + 4);
   }
 
-  rain.update(dt, w.rain, w.wind, windDir);
+  rain.update(dt, rainK, w.wind, windDir);
+  snow.update(dt, snowK, w.wind, windDir);
 
-  // leaves
-  for (let i = 0; i < LEAVES; i++) {
+  // leaves / petals: how many depends on the season
+  leaves.count = Math.min(LEAVES, Math.round(90 * S.leaves));
+  for (let i = 0; i < leaves.count; i++) {
     const l = leafData[i];
     if (!l.init) { resetLeaf(l, cow.pos, true); l.init = true; }
     l.s += dt;
@@ -1208,15 +1273,65 @@ function updateEnvironment(dt) {
     leaves.setMatrixAt(i, _m);
   }
   leaves.instanceMatrix.needsUpdate = true;
-  leafMat.color.setHex(0xe0c050).multiplyScalar(0.6 + 0.4 * env.dayness);
+  leafMat.color.copy(S.leafColor).multiplyScalar(0.6 + 0.4 * env.dayness);
 
   world.setFrame(state.time, w.wind);
-  water.setFrame(state.time, env, w.rain);
+  water.setFrame(state.time, env, rainK, S.ice);
+}
+
+// ---------- season wheel (top right) ----------
+const wheel = $('season-wheel'), wctx = wheel.getContext('2d');
+function drawSeasonWheel() {
+  const W = 110, R = W / 2, ring = R - 6; // drawn in CSS pixels, canvas is 2x for sharpness
+  const idx = SEASON_ORDER.indexOf(env.season);
+  const year = (idx + env.seasonT) / 4; // 0..1 position in the year
+  wctx.setTransform(wheel.width / W, 0, 0, wheel.width / W, 0, 0);
+  wctx.clearRect(0, 0, W, W);
+  // four season arcs (spring starts at the top, clockwise)
+  for (let i = 0; i < 4; i++) {
+    const a0 = -Math.PI / 2 + (i / 4) * Math.PI * 2, a1 = a0 + Math.PI / 2;
+    wctx.beginPath();
+    wctx.arc(R, R, ring, a0 + 0.04, a1 - 0.04);
+    wctx.strokeStyle = SEASON_INFO[SEASON_ORDER[i]].color;
+    wctx.globalAlpha = i === idx ? 1 : 0.38;
+    wctx.lineWidth = i === idx ? 9 : 7;
+    wctx.lineCap = 'round';
+    wctx.stroke();
+    // icon in the middle of each arc
+    const am = (a0 + a1) / 2;
+    wctx.globalAlpha = i === idx ? 1 : 0.55;
+    wctx.font = `${i === idx ? 15 : 12}px "Segoe UI Emoji", sans-serif`;
+    wctx.textAlign = 'center'; wctx.textBaseline = 'middle';
+    wctx.fillText(SEASON_INFO[SEASON_ORDER[i]].icon, R + Math.cos(am) * (ring - 17), R + Math.sin(am) * (ring - 17));
+  }
+  wctx.globalAlpha = 1;
+  // marker: where we are in the year
+  const am = -Math.PI / 2 + year * Math.PI * 2;
+  wctx.beginPath();
+  wctx.arc(R + Math.cos(am) * ring, R + Math.sin(am) * ring, 6, 0, Math.PI * 2);
+  wctx.fillStyle = '#fff'; wctx.fill();
+  wctx.lineWidth = 2; wctx.strokeStyle = 'rgba(0,0,0,.5)'; wctx.stroke();
+  // centre: day / night dial (sun or moon moving round with the hour)
+  const inner = ring - 30;
+  const g2 = wctx.createRadialGradient(R, R, 2, R, R, inner);
+  const day = env.dayness;
+  g2.addColorStop(0, day > 0.5 ? 'rgba(120,170,230,.55)' : 'rgba(30,40,80,.65)');
+  g2.addColorStop(1, 'rgba(0,0,0,.25)');
+  wctx.beginPath(); wctx.arc(R, R, inner, 0, Math.PI * 2); wctx.fillStyle = g2; wctx.fill();
+  const ha = (env.hour / 24) * Math.PI * 2 + Math.PI / 2; // midnight at the bottom, noon at the top
+  wctx.font = '13px "Segoe UI Emoji", sans-serif';
+  wctx.fillText(day > 0.5 ? '☀️' : '🌙', R + Math.cos(ha) * (inner - 9), R + Math.sin(ha) * (inner - 9));
+  wctx.fillStyle = '#fff';
+  wctx.font = '600 11px "Segoe UI", sans-serif';
+  const hh = Math.floor(env.hour), mm = Math.floor((env.hour % 1) * 60);
+  wctx.fillText(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, R, R + 1);
+  $('season-text').textContent = `${SEASON_INFO[env.season].icon} ${SEASON_INFO[env.season].name} · Ngày ${env.day}/2 · ${weatherIcon(env.weatherName)} ${weatherLabel(env.weatherName)}`;
 }
 
 // ---------- HUD ----------
 let hudTimer = 0, fpsFrames = 0, fpsTime = 0, fps = 0;
 function updateHud(dt) {
+  if (hudTimer <= dt) drawSeasonWheel();
   if (cardRemote && hudTimer <= dt) updateCard();
   fpsFrames++; fpsTime += dt;
   if (fpsTime > 0.5) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
@@ -1310,8 +1425,7 @@ function drawMinimap() {
 
 // ---------- loop ----------
 applySettings();
-env.setWeather($('sel-weather').value);
-env.setTime($('sel-time').value);
+env.setWeather('clear');
 env.weather = { ...env.targetWeather };
 
 const clock = new THREE.Clock();
@@ -1327,7 +1441,7 @@ function tick(dt) {
   world.update(cow.pos.x, cow.pos.z);
   water.update(cow.pos.x, cow.pos.z);
   const cr = crocs.update(dt, state.time, {
-    cow, alive: state.started && !state.dead, drinking: state.drinking, nearShore: state.nearShore,
+    cow, alive: state.started && !state.dead, drinking: state.drinking, nearShore: state.nearShore, frozen: env.s.ice > 0.5,
     onStalk: () => { audio.growl(); toast('⚠️ Có gì đó đang bơi về phía bạn…'); },
     onBite: () => { audio.snap(); net.send({ t: 'act', a: 'croc' }); state.shake = 0.8; killCow('croc'); },
   });

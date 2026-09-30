@@ -14,7 +14,7 @@ void main() {
 `;
 
 const frag = /* glsl */`
-uniform float uTime, uRain;
+uniform float uTime, uRain, uIce;
 uniform vec3 uSky, uSkyTop, uSunDir, uSunColor, uDeep, uShallow;
 uniform vec2 uCenter;
 uniform float uRadius;
@@ -45,6 +45,7 @@ void main() {
   vec2 p = vWorld.xz;
   vec2 slope = waveSlope(p, uTime);
   slope += vec2(rainRipples(p, uTime), rainRipples(p + 7.3, uTime * 1.1)) * 0.06 * uRain;
+  slope *= 1.0 - uIce; // frozen: no waves
   vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
   vec3 v = normalize(cameraPosition - vWorld);
   float fres = pow(1.0 - max(dot(n, v), 0.0), 4.0);
@@ -56,7 +57,11 @@ void main() {
   vec3 col = mix(body, sky, 0.18 + 0.72 * fres);
   float spec = pow(max(dot(r, uSunDir), 0.0), 180.0);
   col += uSunColor * spec * 2.5;
-  gl_FragColor = vec4(col, mix(0.8, 0.96, fres));
+  // winter: frosted ice with faint cracks
+  float crack = smoothstep(0.02, 0.0, abs(sin(p.x * 1.7 + sin(p.y * 0.9) * 2.0) * sin(p.y * 1.3 - p.x * 0.4)));
+  vec3 ice = mix(vec3(0.62, 0.74, 0.82), vec3(0.85, 0.92, 0.97), fres) * (0.45 + 0.55 * max(uSkyTop.b * 2.0, 0.3));
+  col = mix(col, ice - crack * 0.12, uIce);
+  gl_FragColor = vec4(col, mix(mix(0.8, 0.96, fres), 0.97, uIce));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
@@ -69,7 +74,7 @@ export class Water {
     this.scene = scene;
     this.meshes = new Map(); // pond id -> mesh
     this.uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-      uTime: { value: 0 }, uRain: { value: 0 },
+      uTime: { value: 0 }, uRain: { value: 0 }, uIce: { value: 0 },
       uSky: { value: new THREE.Color() }, uSkyTop: { value: new THREE.Color() },
       uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunColor: { value: new THREE.Color() },
       uDeep: { value: new THREE.Color(0x0e2a2c) }, uShallow: { value: new THREE.Color(0x3a5a48) },
@@ -106,8 +111,9 @@ export class Water {
   }
 
   // env: Environment (sky / sun colours), rain 0..1
-  setFrame(time, env, rain) {
+  setFrame(time, env, rain, ice = 0) {
     const u = this.uniforms;
+    u.uIce.value = ice;
     u.uTime.value = time;
     u.uRain.value = rain;
     u.uSky.value.copy(env.horizon);

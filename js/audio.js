@@ -77,7 +77,7 @@ export class AudioSys {
     this.windGain.gain.setTargetAtTime((0.05 + w.wind * 0.09) * gust, t, 0.3);
     this.windFilter.frequency.setTargetAtTime(350 + gust * 300 * w.wind, t, 0.5);
     this.rustleGain.gain.setTargetAtTime(0.012 * w.wind * gust, t, 0.3);
-    this.rainGain.gain.setTargetAtTime(w.rain * 0.16, t, 0.5);
+    this.rainGain.gain.setTargetAtTime((env.rainSound ?? w.rain) * 0.16, t, 0.5); // snow is silent
 
     // birds by day when dry, crickets at night
     this.birdTimer -= dt;

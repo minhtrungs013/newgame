@@ -22,6 +22,10 @@ const commonUniforms = () => ({
   uPonds: { value: Array.from({ length: MAX_PONDS }, () => new THREE.Vector4(0, 0, 0, 0)) },
   uPondLevel: { value: new Array(MAX_PONDS).fill(-1e4) },
   uPondCount: { value: 0 },
+  // seasons: colour tint, snow cover (0..1), share of wild flowers shown
+  uSeasonTint: { value: new THREE.Vector3(1, 1, 1) },
+  uSnow: { value: 0 },
+  uFlowerAmt: { value: 1 },
   uObstacleCount: { value: 0 },
   uCowCount: { value: 1 },
 });
@@ -46,7 +50,8 @@ float obstacleMask(vec2 wp) {
 `;
 
 const grassVert = /* glsl */`
-uniform float uTime, uPatch, uWind, uShadowStr, uWet;
+uniform float uTime, uPatch, uWind, uShadowStr, uWet, uSnow;
+uniform vec3 uSeasonTint;
 uniform vec2 uCenter, uWindDir;
 uniform vec3 uSunDir, uSunColor, uAmbient;
 uniform vec4 uCows[${MAX_COWS}];
@@ -71,7 +76,7 @@ void main() {
   fade *= smoothstep(wl + 0.05, wl + 0.3, ground); // nothing grows under water
 
   float t = position.y;
-  float hgt = 0.62 * aParams.y * (0.55 + 0.75 * patchN) * fade;
+  float hgt = 0.62 * aParams.y * (0.55 + 0.75 * patchN) * fade * (1.0 - 0.35 * uSnow); // snow flattens the grass
   float wid = 0.075 * aParams.z * (1.0 - t * 0.9);
 
   float a = aParams.x;
@@ -115,6 +120,9 @@ void main() {
   col = mix(col, cTip, smoothstep(0.35, 1.0, t));
   col *= 0.7 + 0.6 * patchN;
   col = mix(col, col * vec3(0.8, 0.95, 0.85), uWet * 0.6);
+  col *= uSeasonTint;
+  // frost / snow on the blades (more towards the tips)
+  col = mix(col, vec3(0.55, 0.6, 0.66), uSnow * (0.35 + 0.55 * t));
 
   float ao = mix(0.3, 1.0, smoothstep(0.0, 0.8, t));
   vec3 light = uAmbient * 0.9 + uSunColor * (diff * shadow + trans);
@@ -139,7 +147,7 @@ void main() {
 `;
 
 const flowerVert = /* glsl */`
-uniform float uTime, uPatch, uWind;
+uniform float uTime, uPatch, uWind, uFlowerAmt;
 uniform vec2 uCenter, uWindDir;
 uniform vec3 uSunColor, uAmbient;
 uniform vec4 uCows[${MAX_COWS}];
@@ -159,6 +167,7 @@ void main() {
   float fade = (1.0 - smoothstep(0.6, 0.95, dist)) * obstacleMask(wp);
   float ground = terrainH(wp);
   fade *= step(waterLevel(wp) + 0.15, ground);
+  fade *= step(fract(aOffset.x * 13.17 + aOffset.y * 7.31), uFlowerAmt * 0.62); // fewer flowers out of season
   float gust = vnoise(wp * 0.045 - uWindDir * uTime * 0.9);
   vec2 sway = uWindDir * uWind * gust * 0.15;
   for (int i = 0; i < ${MAX_COWS}; i++) {

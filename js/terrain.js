@@ -173,6 +173,28 @@ export class Terrain {
     const count = this.geo.attributes.position.count;
     this.geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
     this.mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+    // seasons: tint the ground and cover it with snow in winter (patchy on slopes)
+    this.seasonUniforms = { uSnow: { value: 0 }, uTint: { value: new THREE.Vector3(1, 1, 1) } };
+    this.mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.seasonUniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', `#include <common>
+varying vec3 vWorldN;
+varying vec3 vWorldP;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vWorldN = normal; vWorldP = position;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform float uSnow;
+uniform vec3 uTint;
+varying vec3 vWorldN;
+varying vec3 vWorldP;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+  diffuseColor.rgb *= uTint;
+  float flatK = smoothstep(0.55, 0.9, vWorldN.y);
+  float patchy = 0.75 + 0.25 * sin(vWorldP.x * 0.21) * sin(vWorldP.z * 0.17);
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.82, 0.88), clamp(uSnow * flatK * patchy * 1.1, 0.0, 0.92));`);
+    };
     this.mesh = new THREE.Mesh(this.geo, this.mat);
     this.mesh.receiveShadow = true;
     this.mesh.frustumCulled = false;

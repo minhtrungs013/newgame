@@ -28,8 +28,17 @@
       <select id="sel-weather">
         <option value="clear">Clear</option>
         <option value="cloudy">Cloudy</option>
-        <option value="rain" selected>Rain</option>
+        <option value="rain" selected>Rain / Snow</option>
         <option value="fog">Fog</option>
+      </select>
+    </label>
+    <label class="pill env-pill">
+      <span>Season</span>
+      <select id="sel-season">
+        <option value="spring" selected>Xuân</option>
+        <option value="summer">Hạ</option>
+        <option value="autumn">Thu</option>
+        <option value="winter">Đông</option>
       </select>
     </label>
     <label class="pill env-pill">
@@ -39,7 +48,6 @@
         <option value="noon">Noon</option>
         <option value="sunset">Sunset</option>
         <option value="night">Night</option>
-        <option value="cycle">Day cycle</option>
       </select>
     </label>
     <div class="pill">
@@ -52,6 +60,12 @@
   </div>
 
   <!-- Invite popup -->
+  <!-- Season / day wheel -->
+  <div id="season" class="ui">
+    <canvas id="season-wheel" width="220" height="220"></canvas>
+    <div id="season-text"></div>
+  </div>
+
   <div id="invite" class="ui hidden">
     <div class="invite-title">Mời bạn bè vào đồng cỏ</div>
     <div id="invite-body"></div>

@@ -63,7 +63,14 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 ## Điều khiển
 
 WASD/mũi tên: đi (S = lùi) · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Z: nằm nghỉ · Chuột: xoay camera · Lăn chuột: zoom ·
-Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · Ctrl+K: hiện/ẩn chỉnh thời tiết & thời gian
+Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · Ctrl+K: chỉnh tay thời tiết, giờ, mùa (admin/test)
+
+## Thời gian, mùa & thời tiết
+
+- Ngày/đêm chạy liên tục: **1 ngày = 15 phút** thật, đồng bộ cho mọi người theo đồng hồ server.
+- **4 mùa**, mỗi mùa 2 ngày (1 năm = 2 giờ): Xuân (nhiều hoa, lá hồng bay), Hạ (nắng gắt), Thu (cỏ và cây vàng cam, lá rụng), Đông (tuyết phủ, tuyết rơi, hồ đóng băng, cá sấu ngủ đông, đói nhanh hơn).
+- Thời tiết **ngẫu nhiên** mỗi 4 phút theo xác suất của từng mùa.
+- Vòng tròn mùa ở góc trên bên phải: vị trí trong năm, giờ trong ngày, thời tiết hiện tại.
 
 ## Bản đồ
 

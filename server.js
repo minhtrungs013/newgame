@@ -294,13 +294,52 @@ class Conn {
 // ---------- game state ----------
 const players = new Map(); // id -> player
 let nextId = 1;
-const envState = { weather: 'rain', time: 'morning', cycleBase: TIMES.morning, cycleStart: Date.now() };
+// ---------- world clock: day/night cycle, seasons, random weather ----------
+// Everything is derived from the real clock, so all players (and server restarts) agree.
+const DAY_MS = 15 * 60 * 1000;          // one in-game day = 15 real minutes
+const SEASON_DAYS = 2;                   // days per season -> a year is 8 days (2 hours)
+const WEATHER_SLOT_MS = 4 * 60 * 1000;   // the weather may change every 4 minutes
+const SEASONS = ['spring', 'summer', 'autumn', 'winter'];
+const SEASON_WEATHER = { // chances per season (rain = snow in winter)
+  spring: { clear: 0.45, cloudy: 0.25, rain: 0.25, fog: 0.05 },
+  summer: { clear: 0.62, cloudy: 0.18, rain: 0.15, fog: 0.05 },
+  autumn: { clear: 0.35, cloudy: 0.3, rain: 0.2, fog: 0.15 },
+  winter: { clear: 0.35, cloudy: 0.3, rain: 0.25, fog: 0.1 },
+};
+// manual overrides from Ctrl+K (kept in memory)
+const envOverride = { hourOffset: 0, seasonOffset: 0, weather: null, weatherSlot: -1 };
 
+function slotRandom(slot) {
+  let t = (slot * 2654435761) >>> 0;
+  t = Math.imul(t ^ (t >>> 15), 1 | t);
+  t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function worldClock(now = Date.now()) {
+  const dayFloat = now / DAY_MS + envOverride.hourOffset / 24;
+  const hour = ((dayFloat % 1) + 1) % 1 * 24;
+  const seasonFloat = dayFloat / SEASON_DAYS + envOverride.seasonOffset;
+  const seasonIdx = ((Math.floor(seasonFloat) % 4) + 4) % 4;
+  const season = SEASONS[seasonIdx];
+  const slot = Math.floor(now / WEATHER_SLOT_MS);
+  let weather;
+  if (envOverride.weather && envOverride.weatherSlot === slot) weather = envOverride.weather;
+  else {
+    const table = SEASON_WEATHER[season];
+    let r = slotRandom(slot), acc = 0;
+    weather = 'clear';
+    for (const [w, pr] of Object.entries(table)) { acc += pr; if (r < acc) { weather = w; break; } }
+  }
+  return {
+    hour, day: Math.floor((((seasonFloat % 1) + 1) % 1) * SEASON_DAYS) + 1, // day within the season
+    season, seasonT: ((seasonFloat % 1) + 1) % 1, weather,
+    nextWeatherIn: WEATHER_SLOT_MS - (now % WEATHER_SLOT_MS),
+  };
+}
+let lastWeather = null, lastSeason = null;
 function envMsg() {
-  const hour = envState.time === 'cycle'
-    ? (envState.cycleBase + (Date.now() - envState.cycleStart) / 25000) % 24
-    : TIMES[envState.time];
-  return { t: 'env', weather: envState.weather, time: envState.time, hour };
+  const c = worldClock();
+  return { t: 'env', weather: c.weather, hour: +c.hour.toFixed(4), dayHours: DAY_MS / 3600000, season: c.season, seasonT: +c.seasonT.toFixed(4), day: c.day, next: c.nextWeatherIn };
 }
 const num = (v, lo, hi, def = 0) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
@@ -543,12 +582,13 @@ function handle(p, text) {
     }
     case 'env': {
       if (!p.ready) return;
-      if (WEATHERS.includes(m.weather)) envState.weather = m.weather;
-      if (m.time === 'cycle' && envState.time !== 'cycle') {
-        envState.cycleBase = TIMES[envState.time];
-        envState.cycleStart = Date.now();
-        envState.time = 'cycle';
-      } else if (TIMES[m.time] !== undefined) envState.time = m.time;
+      // manual override (Ctrl+K): weather until the next random change, or jump the clock / season
+      if (WEATHERS.includes(m.weather)) { envOverride.weather = m.weather; envOverride.weatherSlot = Math.floor(Date.now() / WEATHER_SLOT_MS); }
+      if (TIMES[m.time] !== undefined) envOverride.hourOffset += ((TIMES[m.time] - worldClock().hour) % 24 + 24) % 24;
+      if (SEASONS.includes(m.season)) {
+        const cur = SEASONS.indexOf(worldClock().season), want = SEASONS.indexOf(m.season);
+        envOverride.seasonOffset += (want - cur + 4) % 4;
+      }
       broadcast({ ...envMsg(), by: p.name });
       break;
     }
@@ -595,6 +635,14 @@ setInterval(() => {
   if (ps.length) broadcast({ t: 'snap', ps });
 }, 1000 / 15);
 setInterval(() => broadcast(envMsg()), 10000);
+setInterval(() => {
+  const c = worldClock();
+  if (c.weather !== lastWeather || c.season !== lastSeason) {
+    if (lastSeason && c.season !== lastSeason) console.log(`~ season: ${c.season}`);
+    lastWeather = c.weather; lastSeason = c.season;
+    broadcast(envMsg());
+  }
+}, 2000);
 setInterval(() => { for (const p of players.values()) if (p.ready && p.user && p.saveDirty) saveProfile(p); }, 20000);
 // hosts (Render, Docker...) send SIGTERM before stopping: save everyone first
 let shuttingDown = false;

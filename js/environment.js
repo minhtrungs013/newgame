@@ -23,6 +23,25 @@ export const WEATHERS = {
   fog:    { cloud: 0.65, dark: 0.78, desat: 0.75, fog: 0.042,  wind: 0.25, rain: 0, fogTint: 0.85 },
 };
 
+// ---------- seasons ----------
+// Visual / gameplay parameters per season; the world blends into the next season
+// during the last 20% of the current one.
+export const SEASON_ORDER = ['spring', 'summer', 'autumn', 'winter'];
+export const SEASON_INFO = {
+  spring: { name: 'Xuân', icon: '🌸', color: '#8fd86a' },
+  summer: { name: 'Hạ', icon: '☀️', color: '#f2c83a' },
+  autumn: { name: 'Thu', icon: '🍂', color: '#e8803a' },
+  winter: { name: 'Đông', icon: '❄️', color: '#8ec8f0' },
+};
+const SEASON_PARAMS = {
+  //        grass tint           foliage tint          snow  flowers leaves leaf colour  sun   ice  hunger
+  spring: { grass: [0.95, 1.12, 0.85], foliage: [1.0, 1.12, 0.85], snow: 0, flowers: 1.6, leaves: 1.0, leaf: 0xf4a6c8, sun: 1.0,  ice: 0, hunger: 1.0 },
+  summer: { grass: [1.06, 1.0, 0.78], foliage: [0.95, 1.0, 0.85], snow: 0, flowers: 1.0, leaves: 0.5, leaf: 0xe0c050, sun: 1.12, ice: 0, hunger: 1.0 },
+  autumn: { grass: [1.4, 1.0, 0.45], foliage: [1.75, 0.85, 0.3], snow: 0, flowers: 0.3, leaves: 2.2, leaf: 0xe0762a, sun: 0.95, ice: 0, hunger: 1.1 },
+  winter: { grass: [1.2, 1.25, 1.35], foliage: [1.55, 1.6, 1.7], snow: 0.85, flowers: 0, leaves: 0, leaf: 0xffffff, sun: 0.8,  ice: 1, hunger: 1.3 },
+};
+export const WEATHER_NAMES = { clear: 'Nắng', cloudy: 'Nhiều mây', rain: 'Mưa', fog: 'Sương mù' };
+
 const gray = (c, amt) => {
   const l = c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
   c.r += (l - c.r) * amt; c.g += (l - c.g) * amt; c.b += (l - c.b) * amt;
@@ -49,33 +68,55 @@ export class Environment {
     this.lightDir = new THREE.Vector3();
     this.sunI = 1; this.ambI = 1; this.stars = 0; this.sunVis = 1; this.dayness = 1;
     this.flash = 0;
+    // world clock (driven by the server; see server.js worldClock)
+    this.dayHours = 0.25;          // real hours per in-game day (15 min)
+    this.day = 1;
+    this.season = 'spring';
+    this.seasonT = 0;              // 0..1 progress through the season
+    this.weatherName = 'rain';
+    this.s = { ...SEASON_PARAMS.spring, leafColor: new THREE.Color(SEASON_PARAMS.spring.leaf) }; // blended season params
+    this.seasonBlend();
     this.compute();
   }
 
-  setTime(name) {
-    if (name === 'cycle') { this.cycle = true; return; }
-    this.cycle = false;
-    this.targetHour = TIME_PRESETS[name];
+  setWeather(name) { this.weatherName = name; this.targetWeather = WEATHERS[name]; }
+
+  // state from the server: jump if far off, otherwise nudge so the sky never snaps
+  applyServer(m, instant = false) {
+    if (typeof m.dayHours === 'number') this.dayHours = m.dayHours;
+    if (m.season) { this.season = m.season; this.seasonT = m.seasonT || 0; this.day = m.day || 1; }
+    if (m.weather) this.setWeather(m.weather);
+    if (typeof m.hour === 'number') {
+      const diff = ((m.hour - this.hour + 36) % 24) - 12;
+      if (instant || Math.abs(diff) > 0.75) this.hour = m.hour; else this.hour = (this.hour + diff * 0.5 + 24) % 24;
+    }
+    if (instant) this.weather = { ...this.targetWeather };
   }
-  setWeather(name) { this.targetWeather = WEATHERS[name]; }
+
+  // blend the current season's parameters towards the next one near the season's end
+  seasonBlend() {
+    const i = SEASON_ORDER.indexOf(this.season);
+    const a = SEASON_PARAMS[this.season], b = SEASON_PARAMS[SEASON_ORDER[(i + 1) % 4]];
+    const k = THREE.MathUtils.smoothstep(this.seasonT, 0.8, 1);
+    const mix = (x, y) => x + (y - x) * k;
+    const s = this.s;
+    for (const key of ['snow', 'flowers', 'leaves', 'sun', 'ice', 'hunger']) s[key] = mix(a[key], b[key]);
+    s.grass = a.grass.map((v, j) => mix(v, b.grass[j]));
+    s.foliage = a.foliage.map((v, j) => mix(v, b.foliage[j]));
+    s.leafColor.set(a.leaf).lerp(new THREE.Color(b.leaf), k);
+    s.snowing = this.weather.rain * THREE.MathUtils.smoothstep(s.snow, 0.3, 0.7); // rain falls as snow in winter
+  }
 
   update(dt) {
-    if (this.cycle) {
-      this.hour = (this.hour + dt / 25) % 24; // one in-game hour every 25 s
-      this.targetHour = this.hour;
-    } else {
-      // advance forward through the day toward the target so transitions look natural
-      let diff = (this.targetHour - this.hour + 24) % 24;
-      if (diff > 0.001) {
-        const step = Math.max(dt * 0.5, diff * Math.min(1, dt * 1.6));
-        this.hour = (this.hour + Math.min(diff, step)) % 24;
-      }
-    }
-    const k = Math.min(1, dt * 0.6);
+    // the day never stops: one in-game day every `dayHours` real hours
+    this.hour = (this.hour + dt * 24 / (this.dayHours * 3600)) % 24;
+    this.seasonT = Math.min(0.9999, this.seasonT + dt / (this.dayHours * 3600 * 2));
+    const k = Math.min(1, dt * 0.15); // weather drifts over ~20 s
     for (const key of Object.keys(this.weather)) {
       this.weather[key] += (this.targetWeather[key] - this.weather[key]) * k;
     }
     this.flash = Math.max(0, this.flash - dt * 3);
+    this.seasonBlend();
     this.compute();
   }
 
@@ -111,7 +152,7 @@ export class Environment {
     gray(this.horizon, w.desat * 0.9).multiplyScalar(0.35 + 0.65 * w.dark);
     gray(this.sunColor, w.desat * 0.6);
     gray(this.ambient, w.desat * 0.5);
-    this.sunI *= 1 - w.cloud * 0.62;
+    this.sunI *= (1 - w.cloud * 0.62) * (this.s ? this.s.sun : 1);
     this.ambI *= 0.85 + w.cloud * 0.25 * this.dayness;
     this.ambI *= 0.7 + 0.3 * w.dark;
 

@@ -204,8 +204,8 @@ export class Crocs {
     const cow = ctx.cow;
     this._stream(cow.pos.x, cow.pos.z);
 
-    // danger builds up while drinking / loitering on the shore
-    const exposed = ctx.alive && (ctx.drinking || ctx.nearShore);
+    // danger builds up while drinking / loitering on the shore (not while the ponds are frozen)
+    const exposed = ctx.alive && !ctx.frozen && (ctx.drinking || ctx.nearShore);
     this.danger = Math.max(0, this.danger + dt * (ctx.drinking ? 1 : ctx.nearShore ? 0.45 : -1.5));
     if (!ctx.alive) this.danger = 0;
 
@@ -227,7 +227,7 @@ export class Crocs {
     for (const c of this.crocs.values()) {
       c.t += dt;
       const p = c.pond;
-      let targetY = p.level - 0.09; // just the eyes and back break the surface
+      let targetY = p.level - (ctx.frozen ? 0.6 : 0.09); // just the eyes and back break the surface (deep under the ice in winter)
       if (c.state === 'lurk') {
         if (!c.wander || Math.hypot(c.wander.x - c.pos.x, c.wander.y - c.pos.z) < 1 || c.t > 12) {
           c.wander = this._randomWaterPoint(c); c.t = 0;
