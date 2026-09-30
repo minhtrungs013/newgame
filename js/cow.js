@@ -464,6 +464,9 @@ export class Cow {
     this.knock = new THREE.Vector2(); // knockback velocity (xz)
     this.stun = 0;
     this.onLand = null;
+    // lying down: `lying` is the wish, `lie` animates 0 (standing) .. 1 (lying)
+    this.lying = false;
+    this.lie = 0;
     this.setAge(age);
   }
 
@@ -528,7 +531,12 @@ export class Cow {
   }
 
   // push this cow away (dx,dz normalised) with a little hop
+  // fully down / fully up (used to block walking & actions while changing posture)
+  get isDown() { return this.lie > 0.95; }
+  get isUp() { return this.lie < 0.05; }
+
   knockback(dx, dz, power = 1) {
+    this.lying = false;
     this.knock.set(dx * 9 * power, dz * 9 * power);
     if (this.air < 0.3) this.vy = Math.max(this.vy, 4.2 * Math.min(power, 1.3));
     this.stun = 0.6;
@@ -624,6 +632,10 @@ export class Cow {
     const amp = Math.min(0.62, sp * 0.2) * (running ? 1.15 : 1);
 
     const airK = smooth(0.02, 0.25, this.air);
+    // lie down / stand up takes about a second
+    this.lie += ((this.lying ? 1 : 0) - this.lie) * Math.min(1, dt * 2.2);
+    if (Math.abs(this.lie - (this.lying ? 1 : 0)) < 0.002) this.lie = this.lying ? 1 : 0;
+    const lieK = smooth(0, 1, this.lie);
     for (const L of this.legs) {
       const s = Math.sin(this.phase + L.phase);
       const c = Math.cos(this.phase + L.phase);
@@ -637,13 +649,22 @@ export class Cow {
       // foot plant event (when leg passes back through the stance start)
       if (moving && airK < 0.1 && L.lastS > 0 && s <= 0 && this.onStep) this.onStep(this.speed);
       L.lastS = s;
+      // lying pose: front legs folded under the chest, hind legs tucked forward & splayed out
+      if (lieK > 0) {
+        const hipLie = L.front ? 1.35 : -1.25;
+        const kneeLie = L.front ? -2.5 : 2.3;
+        L.hip.rotation.x += (hipLie - L.hip.rotation.x) * lieK;
+        L.knee.rotation.x += (kneeLie - L.knee.rotation.x) * lieK;
+      }
+      L.hip.rotation.z = L.front ? 0 : Math.sign(L.x) * 0.45 * lieK;
     }
 
     // body motion
     const bob = moving ? Math.abs(Math.sin(this.phase)) * 0.035 * Math.min(1, sp / 2) : 0;
     const breathe = Math.sin(this.time * 1.7) * 0.008;
-    this.body.position.y = bob + breathe;
-    this.body.rotation.z = moving ? Math.sin(this.phase) * 0.025 : 0;
+    this.body.position.y = bob + breathe * (1 + lieK * 1.5) - lieK * 0.52;
+    // resting cows lean a little to one side
+    this.body.rotation.z = (moving ? Math.sin(this.phase) * 0.025 : 0) + lieK * 0.1;
     // nose up while rising, nose down while falling
     this.body.rotation.x = airK * THREE.MathUtils.clamp(-this.vy * 0.035, -0.2, 0.25);
 
@@ -662,12 +683,15 @@ export class Cow {
 
     // grazing / head
     if (this.grazeTimer > 0) this.grazeTimer -= dt;
-    const grazeTarget = this.grazeTimer > 0 && !moving ? 1 : 0;
+    const grazeTarget = this.grazeTimer > 0 && !moving && !this.lying ? 1 : 0;
     this.graze += (grazeTarget - this.graze) * Math.min(1, dt * 2.5);
     const chew = this.graze > 0.8 ? Math.sin(this.time * 9) * 0.04 : 0;
     const headBob = moving ? Math.sin(this.phase * 2) * 0.04 : Math.sin(this.time * 0.6) * 0.03;
     this.neck.rotation.x = 0.05 + this.graze * 1.15 + headBob + windup * 0.55 + thrust * 0.75 - airK * 0.15;
-    this.head.rotation.x = -0.05 + this.graze * 0.3 + chew + thrust * 0.35;
+    // lying: head held a bit lower, slowly chewing the cud
+    this.neck.rotation.x += lieK * 0.12;
+    const cud = lieK * Math.sin(this.time * 5.5) * 0.025;
+    this.head.rotation.x = -0.05 + this.graze * 0.3 + chew + thrust * 0.35 + cud;
     this.head.rotation.y = moving ? 0 : Math.sin(this.time * 0.35) * 0.25 * (1 - this.graze);
 
     // ears twitch
@@ -684,7 +708,8 @@ export class Cow {
     for (let i = 0; i < this.tail.length; i++) {
       const k = i / this.tail.length;
       this.tail[i].rotation.z = Math.sin(this.time * 2.2 - i * 0.5) * (0.05 + this.tailSwish * 0.3) * (0.5 + k);
-      this.tail[i].rotation.x = (i === 0 ? 0.1 : 0.012) + (moving ? Math.sin(this.phase - i * 0.4) * 0.04 : 0);
+      // lying: the tail slopes back so its tip rests on the ground
+      this.tail[i].rotation.x = (i === 0 ? 0.1 + lieK * 0.35 : 0.012 + lieK * 0.06) + (moving ? Math.sin(this.phase - i * 0.4) * 0.04 : 0);
     }
   }
 }

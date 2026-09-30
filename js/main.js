@@ -191,18 +191,19 @@ addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F3'].includes(k)) e.preventDefault();
   if (e.repeat) { state.keys.add(k); return; }
   state.keys.add(k);
-  if (k === 'Space' && state.started && cow.stun <= 0 && cow.jump()) {
+  if (k === 'KeyZ' && state.started) toggleLie();
+  if (k === 'Space' && state.started && cow.stun <= 0 && cow.isUp && !cow.lying && cow.jump()) {
     audio.jump();
     net.send({ t: 'act', a: 'jump' });
   }
-  if (k === 'KeyF' && state.started) tryButt();
+  if (k === 'KeyF' && state.started && cow.isUp && !cow.lying) tryButt();
   if (k === 'KeyQ' && state.started) {
     audio.moo();
     selfTag.say('Mooo~', 2);
     net.send({ t: 'moo' });
     state.happy = Math.min(1, state.happy + 0.03);
   }
-  if (k === 'KeyE' && state.started && cow.speed < 0.6) cow.startGraze(1.5);
+  if (k === 'KeyE' && state.started && cow.speed < 0.6 && !cow.lying) cow.startGraze(1.5);
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
     document.body.classList.toggle('cinematic', state.cinematic);
@@ -483,6 +484,19 @@ function spatial(pos, range = 80) {
 }
 const tmpV2 = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
 
+function toggleLie() {
+  if (!cow.lying) {
+    if (!cow.grounded || cow.stun > 0 || cow.butting) return;
+    cow.lying = true;
+    cow.grazeTimer = 0;
+    audio.land(2.5, 0.6);
+    selfTag.say('💤', 2);
+  } else {
+    cow.lying = false;
+    audio.jump(0.5);
+  }
+}
+
 function tryButt() {
   if (state.buttCooldown > 0 || cow.stun > 0 || !cow.startButt()) return;
   state.buttCooldown = 0.9;
@@ -548,7 +562,8 @@ function updateCow(dt) {
   const r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
   let targetSpeed = 0;
-  const canControl = state.started && cow.stun <= 0;
+  if (state.started && cow.lying && (f || r)) toggleLie();
+  const canControl = state.started && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying;
   if (canControl && (f || r)) {
     // camera-relative movement
     const fx = -Math.sin(state.camYaw), fz = -Math.cos(state.camYaw);
@@ -641,8 +656,9 @@ function updateCow(dt) {
     state.chewTimer -= dt;
     if (state.chewTimer < 0) { state.chewTimer = 0.32 + Math.random() * 0.1; audio.chew(); }
   }
-  state.food = Math.max(0, state.food - dt * (0.004 + cow.speed * 0.0015));
-  state.water = Math.max(0, state.water - dt * (0.005 + cow.speed * 0.002));
+  const rest = cow.isDown ? 0.4 : 1; // resting cows get hungry / thirsty more slowly
+  state.food = Math.max(0, state.food - dt * (0.004 + cow.speed * 0.0015) * rest);
+  state.water = Math.max(0, state.water - dt * (0.005 + cow.speed * 0.002) * rest);
   // thirsty: shrink too
   if (state.started && state.water <= 0.02) {
     setAge(state.age - STARVE_SHRINK * 0.7 * dt);
@@ -653,7 +669,7 @@ function updateCow(dt) {
     setAge(state.age - STARVE_SHRINK * dt);
     if (!state.starvingWarned) { state.starvingWarned = true; toast('Bò đói quá, đang gầy đi… Giữ E để gặm cỏ!'); }
   } else if (state.food > 0.2) state.starvingWarned = false;
-  const targetHappy = 0.2 + state.food * 0.35 + state.water * 0.3 + (cow.speed > 0.5 ? 0.15 : 0.05) - env.weather.rain * 0.05;
+  const targetHappy = 0.2 + state.food * 0.35 + state.water * 0.3 + (cow.speed > 0.5 ? 0.15 : cow.isDown ? 0.18 : 0.05) - env.weather.rain * 0.05;
   state.happy += (targetHappy - state.happy) * dt * 0.05;
 }
 
@@ -672,7 +688,7 @@ function updateCamera(dt) {
   const targetDist = state.cinematic ? 10 : state.dist;
   state.camDist += (targetDist - state.camDist) * Math.min(1, dt * 5);
 
-  const target = tmpV.set(cow.pos.x, cow.pos.y + 1.2 * cow.size + cow.air * 0.6, cow.pos.z);
+  const target = tmpV.set(cow.pos.x, cow.pos.y + (1.2 - 0.45 * cow.lie) * cow.size + cow.air * 0.6, cow.pos.z);
   // camera shake after bumps and landings
   state.shake = Math.max(0, state.shake - dt * 1.5);
   const sh = state.shake * state.shake;
@@ -798,7 +814,8 @@ function updateHud(dt) {
   $('bar-food').style.width = `${Math.round(state.food * 100)}%`;
   $('bar-grow').style.width = `${Math.round(state.age * 100)}%`;
   $('bar-water').style.width = `${Math.round(state.water * 100)}%`;
-  const prompt = state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
+  const prompt = cow.lying ? 'Đang nằm nghỉ… 💤  (Z để đứng dậy)'
+    : state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
   $('prompt').textContent = prompt;
   $('prompt').classList.toggle('show', !!prompt && state.started);
   $('txt-stage').textContent = state.stage;
@@ -890,7 +907,7 @@ function tick(dt) {
   updateEnvironment(dt);
   audio.update(dt, env, state.time);
   net.update(dt, cow, camera);
-  selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + 2.0 * cow.size, cow.pos.z);
+  selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + (2.0 - 0.5 * cow.lie) * cow.size, cow.pos.z);
   selfTag.update(dt, selfTagPos, camera);
   renderer.render(scene, camera);
   drawMinimap();

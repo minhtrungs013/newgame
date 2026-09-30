@@ -176,7 +176,7 @@ function cleanLook(l) {
     acc: pick(l.acc, ACCESSORIES, 'none'), accColor: hex(l.accColor, '#d83a3a'),
   };
 }
-const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age });
+const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l });
 const bodySize = (p) => CALF_SIZE + ((p.look ? p.look.size : 1) - CALF_SIZE) * p.age;
 
 function broadcast(obj, except) {
@@ -194,7 +194,7 @@ server.on('upgrade', (req, socket) => {
   socket.setNoDelay(true);
 
   const p = {
-    id: nextId++, name: 'Bò', coat: 'holstein', x: 0, z: 0, h: 0, sp: 0, g: 0,
+    id: nextId++, name: 'Bò', coat: 'holstein', x: 0, z: 0, h: 0, sp: 0, g: 0, l: 0,
     ready: false, dirty: false, lastChat: 0, chatBudget: 5,
     lastJump: 0, lastButt: 0, lastHit: 0,
     age: 0, ageT: Date.now(),
@@ -235,7 +235,7 @@ function handle(p, text) {
     case 's': {
       if (!p.ready) return;
       p.x = num(m.x, -1e6, 1e6, p.x); p.z = num(m.z, -1e6, 1e6, p.z);
-      p.h = num(m.h, -1e4, 1e4, p.h); p.sp = num(m.sp, 0, 10); p.g = num(m.g, 0, 1);
+      p.h = num(m.h, -1e4, 1e4, p.h); p.sp = num(m.sp, 0, 10); p.g = num(m.g, 0, 1); p.l = m.l ? 1 : 0;
       // growth is reported by the client but can't go faster than grazing allows
       const now = Date.now();
       const maxAge = p.age + ((now - p.ageT) / 1000) * MAX_GROW_PER_SEC;
@@ -308,7 +308,7 @@ setInterval(() => {
   for (const p of players.values()) {
     if (!p.ready || !p.dirty) continue;
     p.dirty = false;
-    ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2), +p.age.toFixed(3)]);
+    ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2), +p.age.toFixed(3), p.l]);
   }
   if (ps.length) broadcast({ t: 'snap', ps });
 }, 1000 / 15);

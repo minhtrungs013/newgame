@@ -57,7 +57,9 @@ class Remote {
     this.cow = new Cow(scene, { look: p.look, coat: p.coat, seed: p.id * 7 + 3, age: p.a ?? 1 });
     this.cow.pos.set(p.x, heightAt(p.x, p.z), p.z);
     this.cow.heading = p.h;
-    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1 };
+    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1, l: p.l || 0 };
+    this.cow.lying = !!p.l;
+    if (p.l) this.cow.lie = 1;
     this.tag = new NameTag(tags, p.name);
     this.labelPos = new THREE.Vector3();
   }
@@ -74,6 +76,7 @@ class Remote {
     c.heading += angleDiff(c.heading, t.h) * Math.min(1, dt * 10);
     c.speed += (t.sp - c.speed) * Math.min(1, dt * 8);
     c.grazeTimer = t.g > 0.5 ? 0.5 : 0;
+    c.lying = t.l > 0.5;
     // grow / shrink smoothly towards the age the owner reports
     if (Math.abs(t.a - c.age) > 0.001) c.setAge(c.age + (t.a - c.age) * Math.min(1, dt * 3));
     c.updatePhysics(dt); // jump arcs are simulated locally from 'act' events
@@ -88,7 +91,7 @@ class Remote {
     c.root.rotation.x += (-Math.atan2(hF - hB, 1.8) - c.root.rotation.x) * Math.min(1, dt * 6);
     // skip animation work for far-away cows
     if (camera.position.distanceToSquared(c.pos) < 150 * 150) c.animate(dt, t.sp > 3);
-    this.labelPos.set(c.pos.x, c.pos.y + c.air + 2.0 * c.size, c.pos.z);
+    this.labelPos.set(c.pos.x, c.pos.y + c.air + (2.0 - 0.5 * c.lie) * c.size, c.pos.z);
     this.tag.update(dt, this.labelPos, camera);
   }
   dispose() { this.cow.dispose(); this.tag.dispose(); }
@@ -178,9 +181,9 @@ export class Net {
         break;
       }
       case 'snap':
-        for (const [id, x, z, h, sp, g, a] of m.ps) {
+        for (const [id, x, z, h, sp, g, a, l] of m.ps) {
           const r = this.remotes.get(id);
-          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a });
+          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a, l: l ?? 0 });
         }
         break;
       case 'moo': {
@@ -229,9 +232,9 @@ export class Net {
       t: 's',
       x: +cow.pos.x.toFixed(2), z: +cow.pos.z.toFixed(2),
       h: +(((cow.heading % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)).toFixed(3),
-      sp: +cow.speed.toFixed(2), g: cow.graze > 0.5 ? 1 : 0, a: +cow.age.toFixed(3),
+      sp: +cow.speed.toFixed(2), g: cow.graze > 0.5 ? 1 : 0, a: +cow.age.toFixed(3), l: cow.lying ? 1 : 0,
     };
-    const key = `${msg.x},${msg.z},${msg.h},${msg.sp},${msg.g},${msg.a}`;
+    const key = `${msg.x},${msg.z},${msg.h},${msg.sp},${msg.g},${msg.a},${msg.l}`;
     if (key === this.lastSent) return;
     this.lastSent = key;
     this.send(msg);

@@ -62,7 +62,7 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 
 ## Điều khiển
 
-WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Chuột: xoay camera · Lăn chuột: zoom ·
+WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Z: nằm nghỉ · Chuột: xoay camera · Lăn chuột: zoom ·
 Enter: chat · C: chế độ điện ảnh · F3: debug · Ctrl+K: hiện/ẩn chỉnh thời tiết & thời gian
 
 ## Bản đồ
