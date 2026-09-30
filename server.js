@@ -12,6 +12,11 @@ const ROOT = __dirname;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp' };
 const MAX_PLAYERS = 32;
 const COATS = ['holstein', 'brown', 'jersey', 'black'];
+// cow appearance options (must match js/cow.js)
+const PATTERNS = ['none', 'few', 'many', 'patches'];
+const HORNS = ['none', 'short', 'long'];
+const ACCESSORIES = ['none', 'bell', 'hat', 'flowers', 'scarf'];
+const HEX = /^#[0-9a-f]{6}$/i;
 const WEATHERS = ['clear', 'cloudy', 'rain', 'fog'];
 const TIMES = { morning: 7.9, noon: 12.5, sunset: 18.35, night: 23.0 };
 
@@ -157,7 +162,17 @@ function envMsg() {
 }
 const num = (v, lo, hi, def = 0) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
-const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g });
+function cleanLook(l) {
+  if (!l || typeof l !== 'object') return null;
+  const hex = (v, d) => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : d);
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  return {
+    base: hex(l.base, '#f2efe8'), spot: hex(l.spot, '#121212'), pattern: pick(l.pattern, PATTERNS, 'many'),
+    snout: hex(l.snout, '#dca59a'), horns: pick(l.horns, HORNS, 'short'), size: Math.round(num(l.size, 0.85, 1.2, 1) * 100) / 100,
+    acc: pick(l.acc, ACCESSORIES, 'none'), accColor: hex(l.accColor, '#d83a3a'),
+  };
+}
+const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g });
 
 function broadcast(obj, except) {
   const s = JSON.stringify(obj);
@@ -199,6 +214,7 @@ function handle(p, text) {
       if (p.ready) return;
       p.name = clean(m.name, 16) || `Bò ${p.id}`;
       p.coat = COATS.includes(m.coat) ? m.coat : 'holstein';
+      p.look = cleanLook(m.look); // null for old clients -> they fall back to 'coat'
       const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 6;
       p.x = Math.cos(a) * r; p.z = Math.sin(a) * r; p.h = Math.random() * Math.PI * 2;
       p.ready = true;

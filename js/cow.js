@@ -9,23 +9,61 @@ function mulberry32(a) {
   };
 }
 
-// Procedural Holstein pattern: white hide with irregular black patches.
-export const COATS = {
-  holstein: { base: '#f2efe8', spot: '#121212', white: 0xf0ede6, blotch: 0x151515 },
-  brown:    { base: '#f0e8dc', spot: '#6b3a1e', white: 0xefe6da, blotch: 0x6b3a1e },
-  jersey:   { base: '#b9804a', spot: '#8a5a30', white: 0xc89868, blotch: 0x7a4a26 },
-  black:    { base: '#1c1b1a', spot: '#f0ede6', white: 0x2a2826, blotch: 0x121212 },
+// A cow's appearance ("look"). Kept small & JSON-friendly so it can be sent over the network.
+export const PATTERNS = ['none', 'few', 'many', 'patches'];
+export const HORNS = ['none', 'short', 'long'];
+export const ACCESSORIES = ['none', 'bell', 'hat', 'flowers', 'scarf'];
+export const PRESETS = {
+  holstein: { base: '#f2efe8', spot: '#121212', pattern: 'many', snout: '#dca59a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
+  brown:    { base: '#f0e8dc', spot: '#6b3a1e', pattern: 'many', snout: '#dca59a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
+  jersey:   { base: '#b9804a', spot: '#8a5a30', pattern: 'few',  snout: '#3a302a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
+  black:    { base: '#1f1d1c', spot: '#f0ede6', pattern: 'few',  snout: '#4a403c', horns: 'long',  size: 1, acc: 'none', accColor: '#d83a3a' },
 };
+export const DEFAULT_LOOK = PRESETS.holstein;
+const HEX = /^#[0-9a-f]{6}$/i;
 
-function makeSpotTexture(seed = 11, coat = COATS.holstein) {
+// Accept anything (localStorage, network) and return a safe, complete look.
+export function normalizeLook(l) {
+  if (typeof l === 'string' && PRESETS[l]) l = PRESETS[l];
+  l = l && typeof l === 'object' ? l : {};
+  const d = DEFAULT_LOOK;
+  const hex = (v, def) => (typeof v === 'string' && HEX.test(v) ? v.toLowerCase() : def);
+  const pick = (v, list, def) => (list.includes(v) ? v : def);
+  const size = typeof l.size === 'number' && Number.isFinite(l.size) ? Math.min(1.2, Math.max(0.85, l.size)) : 1;
+  return {
+    base: hex(l.base, d.base), spot: hex(l.spot, d.spot), pattern: pick(l.pattern, PATTERNS, d.pattern),
+    snout: hex(l.snout, d.snout), horns: pick(l.horns, HORNS, d.horns), size: Math.round(size * 100) / 100,
+    acc: pick(l.acc, ACCESSORIES, 'none'), accColor: hex(l.accColor, d.accColor),
+  };
+}
+
+export function randomLook() {
+  const r = (a) => a[Math.floor(Math.random() * a.length)];
+  const hsl = (h, s, l) => '#' + new THREE.Color().setHSL(h, s, l).getHexString();
+  const bases = [hsl(0.08, 0.1, 0.93), hsl(0.07, 0.45, 0.5), hsl(0.06, 0.5, 0.3), hsl(0, 0, 0.12), hsl(0.1, 0.35, 0.75), hsl(Math.random(), 0.5, 0.7)];
+  const base = r(bases);
+  const light = new THREE.Color(base).getHSL({}).l > 0.5;
+  return normalizeLook({
+    base,
+    spot: light ? r(['#121212', '#6b3a1e', '#4a2c18', hsl(Math.random(), 0.6, 0.35)]) : r(['#f0ede6', '#e8d8c0', hsl(Math.random(), 0.5, 0.75)]),
+    pattern: r(PATTERNS), snout: r(['#dca59a', '#3a302a', '#8a7a74', '#e8b8a8']),
+    horns: r(HORNS), size: 0.88 + Math.random() * 0.3,
+    acc: r(ACCESSORIES), accColor: hsl(Math.random(), 0.7, 0.5),
+  });
+}
+
+const PATTERN_BLOBS = { none: [0, 0, 0], few: [6, 40, 55], many: [16, 45, 75], patches: [5, 110, 80] };
+
+// Procedural hide: base colour with irregular patches of the spot colour.
+function makeSpotTexture(seed = 11, look = DEFAULT_LOOK) {
   const W = 1024, H = 512;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
-  g.fillStyle = coat.base;
+  g.fillStyle = look.base;
   g.fillRect(0, 0, W, H);
   const rnd = mulberry32(seed);
-  g.fillStyle = coat.spot;
+  g.fillStyle = look.spot;
   const blob = (cx, cy, r) => {
     for (let k = 0; k < 26; k++) {
       const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r * 0.75;
@@ -36,8 +74,8 @@ function makeSpotTexture(seed = 11, coat = COATS.holstein) {
       }
     }
   };
-  const nBlobs = coat === COATS.black ? 6 : coat === COATS.jersey ? 8 : 16;
-  for (let i = 0; i < nBlobs; i++) blob(rnd() * W, 40 + rnd() * (H - 80), 45 + rnd() * 75);
+  const [nBlobs, rMin, rVar] = PATTERN_BLOBS[look.pattern];
+  for (let i = 0; i < nBlobs; i++) blob(rnd() * W, 40 + rnd() * (H - 80), rMin + rnd() * rVar);
   // fur grain
   const img = g.getImageData(0, 0, W, H);
   for (let i = 0; i < img.data.length; i += 4) {
@@ -60,22 +98,26 @@ export const BUTT_HIT_AT = 0.45; // fraction of BUTT_TIME when the head connects
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 export class Cow {
-  constructor(scene, { coat = 'holstein', seed = 11 } = {}) {
-    const C = COATS[coat] || COATS.holstein;
+  constructor(scene, { look, coat, seed = 11 } = {}) {
+    const L = this.look = normalizeLook(look || PRESETS[coat] || DEFAULT_LOOK);
+    this.size = L.size;
     this.scene = scene;
     this.root = new THREE.Group();
     this.root.rotation.order = 'YXZ';
     scene.add(this.root);
 
-    const spotTex = this.spotTex = makeSpotTexture(seed, C);
+    const spotTex = this.spotTex = makeSpotTexture(seed, L);
     const spot = new THREE.MeshStandardMaterial({ map: spotTex, roughness: 0.85 });
-    const white = new THREE.MeshStandardMaterial({ color: C.white, roughness: 0.85 });
-    const black = new THREE.MeshStandardMaterial({ color: C.blotch, roughness: 0.7 });
-    const pink = new THREE.MeshStandardMaterial({ color: 0xdca59a, roughness: 0.6 });
+    // "white" = plain hide (face, legs); "black" = marking colour (eye patch, one ear)
+    const white = new THREE.MeshStandardMaterial({ color: L.base, roughness: 0.85 });
+    const black = new THREE.MeshStandardMaterial({ color: L.pattern === 'none' ? L.base : L.spot, roughness: 0.7 });
+    const pink = new THREE.MeshStandardMaterial({ color: L.snout, roughness: 0.6 });
+    const udderMat = new THREE.MeshStandardMaterial({ color: 0xdca59a, roughness: 0.6 });
     const horn = new THREE.MeshStandardMaterial({ color: 0xe6dcc4, roughness: 0.5 });
     const hoof = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.6 });
     const eye = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.15 });
-    this.materials = [spot, white, black, pink, horn, hoof, eye];
+    this.materials = [spot, white, black, pink, horn, hoof, eye, udderMat];
+    this.root.scale.setScalar(L.size);
 
     const M = (geo, mat, parent, x = 0, y = 0, z = 0) => {
       const m = new THREE.Mesh(geo, mat);
@@ -100,10 +142,10 @@ export class Cow {
     hip.material = spot;
 
     // udder
-    const udder = M(new THREE.SphereGeometry(0.17, 16, 12), pink, body, 0, 0.62, -0.45);
+    const udder = M(new THREE.SphereGeometry(0.17, 16, 12), udderMat, body, 0, 0.62, -0.45);
     udder.scale.set(1.1, 0.8, 1.2);
     for (const [x, z] of [[0.07, 0.07], [-0.07, 0.07], [0.07, -0.07], [-0.07, -0.07]]) {
-      M(new THREE.CylinderGeometry(0.02, 0.025, 0.09, 6), pink, body, x, 0.5, -0.45 + z);
+      M(new THREE.CylinderGeometry(0.02, 0.025, 0.09, 6), udderMat, body, x, 0.5, -0.45 + z);
     }
 
     // legs: hip pivot -> upper -> knee pivot -> lower + hoof
@@ -149,6 +191,7 @@ export class Cow {
     // black patch over one eye
     const patch = M(new THREE.SphereGeometry(0.2, 14, 10), black, head, 0.11, 0.05, 0.08);
     patch.scale.set(0.8, 0.9, 1.1);
+    patch.visible = L.pattern !== 'none';
     const snout = M(new THREE.SphereGeometry(0.19, 18, 12), pink, head, 0, -0.16, 0.43);
     snout.scale.set(1.15, 0.85, 0.9);
     M(new THREE.SphereGeometry(0.035, 8, 6), black, head, 0.08, -0.12, 0.6);
@@ -161,13 +204,15 @@ export class Cow {
       head.add(ear);
       const earM = M(new THREE.SphereGeometry(0.12, 12, 8), s > 0 ? black : white, ear, s * 0.1, 0, 0);
       earM.scale.set(1.5, 0.35, 0.8);
-      const inner = M(new THREE.SphereGeometry(0.09, 10, 6), pink, ear, s * 0.11, -0.03, 0.01);
+      const inner = M(new THREE.SphereGeometry(0.09, 10, 6), udderMat, ear, s * 0.11, -0.03, 0.01);
       inner.scale.set(1.4, 0.2, 0.65);
       if (s > 0) this.earL = ear; else this.earR = ear;
       // horns: two segments curving up & out
       const h1 = new THREE.Group();
       h1.position.set(s * 0.14, 0.22, 0.02);
       h1.rotation.z = -s * 1.1;
+      h1.visible = L.horns !== 'none';
+      if (L.horns === 'long') { h1.scale.set(1.25, 1.9, 1.25); h1.rotation.z = -s * 1.25; }
       head.add(h1);
       M(new THREE.CylinderGeometry(0.028, 0.045, 0.16, 8), horn, h1, 0, 0.08, 0);
       const h2 = new THREE.Group();
@@ -196,6 +241,8 @@ export class Cow {
     }
     const tuft = M(new THREE.SphereGeometry(0.07, 10, 8), white, parent, 0, -0.2, 0);
     tuft.scale.set(0.9, 1.8, 0.9);
+
+    this._buildAccessory(L, M);
 
     // state
     this.pos = new THREE.Vector3();
@@ -266,6 +313,53 @@ export class Cow {
     if (this.buttT > 0) this.buttT = Math.max(0, this.buttT - dt);
     if (this.stun > 0) this.stun = Math.max(0, this.stun - dt);
     return landed;
+  }
+
+  _buildAccessory(L, M) {
+    if (L.acc === 'none') return;
+    const mat = (color, extra = {}) => {
+      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...extra });
+      this.materials.push(m);
+      return m;
+    };
+    const accMat = mat(L.accColor);
+    // ring around the neck, following the neck's forward-up tilt
+    const collar = (radius, tube, material) => {
+      const ring = M(new THREE.TorusGeometry(radius, tube, 8, 24), material, this.neck, 0, 0.0, 0.18);
+      ring.rotation.x = -0.55;
+      return ring;
+    };
+    if (L.acc === 'bell') {
+      collar(0.29, 0.035, mat(0x5a3a22));
+      const gold = mat(0xd4a93a, { metalness: 0.85, roughness: 0.3 });
+      const bell = M(new THREE.SphereGeometry(0.075, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), gold, this.neck, 0, -0.33, 0.33);
+      bell.scale.y = 1.25;
+      M(new THREE.SphereGeometry(0.022, 6, 6), gold, this.neck, 0, -0.41, 0.33);
+    } else if (L.acc === 'scarf') {
+      collar(0.3, 0.07, accMat).scale.z = 1.6;
+      const tail = M(new THREE.BoxGeometry(0.12, 0.34, 0.05), accMat, this.neck, 0.12, -0.34, 0.36);
+      tail.rotation.set(0.3, 0, 0.25);
+    } else if (L.acc === 'hat') {
+      // Vietnamese conical hat (nón lá) with a coloured chin strap
+      const straw = mat(0xd9c28a, { roughness: 0.9 });
+      const hat = M(new THREE.ConeGeometry(0.44, 0.3, 24, 1, true), straw, this.head, 0, 0.42, 0.06);
+      hat.material.side = THREE.DoubleSide;
+      hat.rotation.x = -0.15;
+      const rim = M(new THREE.TorusGeometry(0.44, 0.012, 6, 32), straw, this.head, 0, 0.27, 0.08);
+      rim.rotation.x = Math.PI / 2 - 0.15;
+      const strap = M(new THREE.TorusGeometry(0.27, 0.012, 6, 24, Math.PI), accMat, this.head, 0, 0.26, 0.08);
+      strap.rotation.set(0, Math.PI / 2, Math.PI);
+    } else if (L.acc === 'flowers') {
+      const center = mat(0xf2c83a);
+      const n = 7;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const x = Math.cos(a) * 0.2, z = 0.05 + Math.sin(a) * 0.17;
+        const fl = M(new THREE.SphereGeometry(0.055, 8, 6), accMat, this.head, x, 0.27, z);
+        fl.scale.y = 0.55;
+        M(new THREE.SphereGeometry(0.022, 6, 5), center, this.head, x, 0.3, z);
+      }
+    }
   }
 
   dispose() {

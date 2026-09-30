@@ -101,15 +101,17 @@
     <div class="start-card">
       <h1>Cow Meadow</h1>
       <p>Dắt bò đi dạo trên đồng cỏ bất tận — cùng bạn bè</p>
-      <input id="inp-name" type="text" maxlength="16" placeholder="Tên con bò của bạn" autocomplete="off" />
-      <div id="coat-pick">
-        <button type="button" data-coat="holstein" class="sel" title="Bò sữa"><i style="background:linear-gradient(135deg,#f2efe8 50%,#121212 50%)"></i>Bò sữa</button>
-        <button type="button" data-coat="brown" title="Đốm nâu"><i style="background:linear-gradient(135deg,#f0e8dc 50%,#6b3a1e 50%)"></i>Đốm nâu</button>
-        <button type="button" data-coat="jersey" title="Bò vàng"><i style="background:#b9804a"></i>Bò vàng</button>
-        <button type="button" data-coat="black" title="Bò đen"><i style="background:#1c1b1a"></i>Bò đen</button>
+      <div id="customizer">
+        <div class="cz-stage">
+          <canvas class="cz-preview"></canvas>
+          <small class="cz-tip">Kéo để xoay</small>
+        </div>
+        <div class="cz-side">
+          <input id="inp-name" type="text" maxlength="16" placeholder="Tên con bò của bạn" autocomplete="off" />
+          <div class="cz-options"></div>
+        </div>
       </div>
       <button id="btn-start" type="button">Vào đồng cỏ</button>
-      <small>Bạn bè cùng mạng LAN mở cùng địa chỉ server để chơi chung</small>
     </div>
   </div>
 

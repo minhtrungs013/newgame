@@ -54,8 +54,7 @@ class Remote {
   constructor(scene, tags, p) {
     this.id = p.id;
     this.name = p.name;
-    this.coat = p.coat;
-    this.cow = new Cow(scene, { coat: p.coat, seed: p.id * 7 + 3 });
+    this.cow = new Cow(scene, { look: p.look, coat: p.coat, seed: p.id * 7 + 3 });
     this.cow.pos.set(p.x, heightAt(p.x, p.z), p.z);
     this.cow.heading = p.h;
     this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0 };
@@ -87,7 +86,7 @@ class Remote {
     c.root.rotation.x += (-Math.atan2(hF - hB, 1.8) - c.root.rotation.x) * Math.min(1, dt * 6);
     // skip animation work for far-away cows
     if (camera.position.distanceToSquared(c.pos) < 150 * 150) c.animate(dt, t.sp > 3);
-    this.labelPos.set(c.pos.x, c.pos.y + c.air + 2.0, c.pos.z);
+    this.labelPos.set(c.pos.x, c.pos.y + c.air + 2.0 * c.size, c.pos.z);
     this.tag.update(dt, this.labelPos, camera);
   }
   dispose() { this.cow.dispose(); this.tag.dispose(); }
@@ -109,9 +108,9 @@ export class Net {
 
   get online() { return this.connected ? this.remotes.size + 1 : 1; }
 
-  connect(name, coat) {
+  connect(name, look) {
     this.name = name;
-    this.coat = coat;
+    this.look = look;
     if (location.protocol === 'file:') { this.h.onStatus('offline'); return; }
     this._open();
   }
@@ -125,7 +124,7 @@ export class Net {
     this.h.onStatus('connecting');
     ws.onopen = () => {
       this.retryDelay = 1500;
-      ws.send(JSON.stringify({ t: 'hello', name: this.name, coat: this.coat }));
+      ws.send(JSON.stringify({ t: 'hello', name: this.name, look: this.look }));
     };
     ws.onmessage = (e) => {
       let m;

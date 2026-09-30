@@ -7,6 +7,7 @@ import { Environment } from './environment.js';
 import { World } from './world.js';
 import { AudioSys } from './audio.js';
 import { Net, NameTag } from './net.js';
+import { Customizer } from './customize.js';
 import { MAX_COWS } from './grass.js';
 import { WEATHERS } from './environment.js';
 
@@ -229,26 +230,19 @@ $('btn-sound').addEventListener('click', (e) => {
   e.target.blur();
 });
 // ---------- start screen ----------
-let chosenCoat = 'holstein';
-try {
-  $('inp-name').value = localStorage.getItem('cow.name') || '';
-  chosenCoat = localStorage.getItem('cow.coat') || 'holstein';
-} catch {}
-for (const b of document.querySelectorAll('#coat-pick button')) {
-  b.classList.toggle('sel', b.dataset.coat === chosenCoat);
-  b.addEventListener('click', () => {
-    chosenCoat = b.dataset.coat;
-    for (const o of document.querySelectorAll('#coat-pick button')) o.classList.toggle('sel', o === b);
-  });
-}
+const customizer = new Customizer($('customizer'));
+try { $('inp-name').value = localStorage.getItem('cow.name') || ''; } catch {}
 $('inp-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-start').click(); });
 $('btn-start').addEventListener('click', () => {
   if (state.started) return;
   const name = $('inp-name').value.replace(/[<>]/g, '').trim().slice(0, 16) || 'Bò Mimi';
-  try { localStorage.setItem('cow.name', name); localStorage.setItem('cow.coat', chosenCoat); } catch {}
-  // rebuild the local cow with the chosen coat
+  try { localStorage.setItem('cow.name', name); } catch {}
+  customizer.save();
+  const look = customizer.look, seed = customizer.seed;
+  customizer.dispose();
+  // rebuild the local cow with the chosen look
   const old = cow;
-  cow = new Cow(scene, { coat: chosenCoat, seed: 11 + Math.floor(Math.random() * 1000) });
+  cow = new Cow(scene, { look, seed });
   cow.onStep = onStep;
   cow.onLand = onLand;
   cow.pos.copy(old.pos); cow.heading = old.heading;
@@ -260,7 +254,7 @@ $('btn-start').addEventListener('click', () => {
   audio.setEnabled(audio.enabled);
   state.started = true;
   $('start').classList.add('gone');
-  net.connect(name, chosenCoat);
+  net.connect(name, look);
   setTimeout(() => audio.moo(), 600);
 });
 
@@ -556,7 +550,7 @@ function updateCow(dt) {
   // don't walk through other players' cows
   for (const r of net.remotes.values()) {
     const dx = cow.pos.x - r.cow.pos.x, dz = cow.pos.z - r.cow.pos.z;
-    const d2 = dx * dx + dz * dz, rr = 1.5;
+    const d2 = dx * dx + dz * dz, rr = 0.75 * (cow.size + r.cow.size);
     if (d2 < rr * rr && d2 > 1e-6) {
       const d = Math.sqrt(d2);
       cow.pos.x = r.cow.pos.x + dx / d * rr;
@@ -603,7 +597,7 @@ function updateCamera(dt) {
   const targetDist = state.cinematic ? 10 : state.dist;
   state.camDist += (targetDist - state.camDist) * Math.min(1, dt * 5);
 
-  const target = tmpV.set(cow.pos.x, cow.pos.y + 1.2 + cow.air * 0.6, cow.pos.z);
+  const target = tmpV.set(cow.pos.x, cow.pos.y + 1.2 * cow.size + cow.air * 0.6, cow.pos.z);
   // camera shake after bumps and landings
   state.shake = Math.max(0, state.shake - dt * 1.5);
   const sh = state.shake * state.shake;
@@ -801,7 +795,7 @@ function frame() {
   updateEnvironment(dt);
   audio.update(dt, env, state.time);
   net.update(dt, cow, camera);
-  selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + 2.0, cow.pos.z);
+  selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + 2.0 * cow.size, cow.pos.z);
   selfTag.update(dt, selfTagPos, camera);
   renderer.render(scene, camera);
   drawMinimap();
