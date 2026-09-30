@@ -14,6 +14,7 @@ import { AudioSys } from './audio.js';
 import { Net, NameTag } from './net.js';
 import { Customizer } from './customize.js';
 import { ClanPanel } from './clan-ui.js';
+import { GamepadInput } from './gamepad.js';
 import { MAX_COWS } from './grass.js';
 import { WEATHERS, SEASON_ORDER, SEASON_INFO, WEATHER_NAMES } from './environment.js';
 
@@ -292,6 +293,18 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => state.keys.delete(e.code));
 addEventListener('blur', () => state.keys.clear());
 
+// ---------- gamepad: buttons become the same key codes as the keyboard ----------
+const pad = new GamepadInput({
+  onKey: (code, down) => {
+    if (down && code === 'Space' && !state.started && !$('start').classList.contains('gone')) { $('btn-start').click(); return; }
+    if (down && code === 'KeyZ' && (menuOpen || !$('invite').classList.contains('hidden'))) code = 'Escape'; // B = back
+    if (down && code === 'KeyZ' && !$('pcard').classList.contains('hidden')) { $('pcard-close').click(); return; }
+    dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, bubbles: true }));
+  },
+  onConnect: (name, on) => toast(on ? `🎮 Đã kết nối tay cầm${name ? ': ' + name.replace(/\s*\(.*\)$/, '') : ''}` : '🎮 Tay cầm đã ngắt kết nối'),
+});
+let prevShake = 0;
+
 let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0, downT = 0;
 canvas.addEventListener('pointerdown', (e) => {
   dragging = true; lastX = e.clientX; lastY = e.clientY;
@@ -342,7 +355,7 @@ $('btn-sound').addEventListener('click', (e) => { setSetting('sound', !settings.
 
 // ---------- settings (Esc menu), saved per browser ----------
 const settings = {
-  quality: 'medium', fov: 55, sound: true, volume: 0.8, sens: 1, invert: false,
+  quality: 'medium', fov: 55, sound: true, volume: 0.8, sens: 1, invert: false, rumble: true,
   minimap: true, status: true, tags: true,
 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cow.settings') || '{}')); } catch {}
@@ -372,6 +385,7 @@ function applySettings(key = null) {
   }
   if (all || key === 'sens') { $('m-sens').value = settings.sens; $('m-sens-v').textContent = `${settings.sens.toFixed(1)}×`; }
   if (all || key === 'invert') $('m-invert').checked = settings.invert;
+  if (all || key === 'rumble') $('m-rumble').checked = settings.rumble;
   for (const k of ['minimap', 'status', 'tags']) {
     if (all || key === k) { document.body.classList.toggle(`hide-${k}`, !settings[k]); $(`m-${k}`).checked = settings[k]; }
   }
@@ -387,6 +401,7 @@ $('m-sound').addEventListener('change', (e) => setSetting('sound', e.target.chec
 $('m-volume').addEventListener('input', (e) => setSetting('volume', Number(e.target.value)));
 $('m-sens').addEventListener('input', (e) => setSetting('sens', Number(e.target.value)));
 $('m-invert').addEventListener('change', (e) => setSetting('invert', e.target.checked));
+$('m-rumble').addEventListener('change', (e) => setSetting('rumble', e.target.checked));
 for (const k of ['minimap', 'status', 'tags']) $(`m-${k}`).addEventListener('change', (e) => setSetting(k, e.target.checked));
 
 let menuOpen = false;
@@ -997,8 +1012,11 @@ function updateCow(dt) {
   const k = state.keys;
   const ageTarget = state.level / LEVEL_MAX;
   if (Math.abs(ageTarget - state.age) > 1e-4) { state.age += (ageTarget - state.age) * Math.min(1, dt * 2.5); cow.setAge(state.age); }
-  const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-  const r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+  let f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+  let r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+  // left stick: analog walking (a light push walks slowly)
+  let stickScale = 1;
+  if (pad.move.m > 0 && !menuOpen) { f = -pad.move.y; r = pad.move.x; stickScale = 0.35 + 0.65 * pad.move.m; }
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
   let targetSpeed = 0;
   if (state.started && cow.lying && (f || r)) toggleLie();
@@ -1019,6 +1037,7 @@ function updateCow(dt) {
     targetSpeed = (back ? -1 : 1) * pace * Math.max(0.25, Math.cos(Math.min(Math.abs(diff), Math.PI / 2)));
     if (cow.isGrazing) cow.grazeTimer = 0;
   }
+  targetSpeed *= stickScale;
   // fatigue: a hungry cow runs slower
   targetSpeed *= 0.75 + 0.25 * Math.min(1, state.food * 2);
   // keep momentum in the air, react faster on the ground
@@ -1139,6 +1158,14 @@ function updateCow(dt) {
 }
 
 function updateCamera(dt) {
+  // right stick: orbit the camera; D-pad up/down: zoom; R3: snap behind the cow
+  if (!menuOpen && (pad.look.x || pad.look.y)) {
+    state.yaw -= pad.look.x * dt * 2.6 * settings.sens;
+    state.pitch = THREE.MathUtils.clamp(state.pitch + pad.look.y * dt * 1.6 * settings.sens * (settings.invert ? -1 : 1), -0.05, 1.35);
+    state.lastDrag = state.time;
+  }
+  if (pad.zoom && !menuOpen) state.dist = THREE.MathUtils.clamp(state.dist * (1 + pad.zoom * dt * 1.5), 3, 28);
+  if (pad.recenter) state.yaw = cow.heading + Math.PI;
   if (state.cinematic) {
     state.yaw += dt * 0.12;
     state.pitch += (0.18 - state.pitch) * dt * 0.5;
@@ -1436,6 +1463,7 @@ function frame() {
 // one simulation + render step (also callable from the console for debugging)
 function tick(dt) {
   state.time += dt;
+  pad.poll();
   updateCow(dt);
   terrain.update(cow.pos.x, cow.pos.z);
   world.update(cow.pos.x, cow.pos.z);
@@ -1455,6 +1483,9 @@ function tick(dt) {
   renderer.render(scene, camera);
   drawMinimap();
   updateHud(dt);
+  // rumble the controller on bumps, hits and bites
+  if (settings.rumble && state.shake > prevShake + 0.05) pad.rumble(state.shake, 120 + state.shake * 300);
+  prevShake = state.shake;
 }
 requestAnimationFrame(frame);
-window.__game = { state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn, camera, pickCow };
+window.__game = { pad, state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn, camera, pickCow };

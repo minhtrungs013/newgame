@@ -65,6 +65,8 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 WASD/mũi tên: đi (S = lùi) · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Z: nằm nghỉ · Chuột: xoay camera · Lăn chuột: zoom ·
 Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · Ctrl+K: chỉnh tay thời tiết, giờ, mùa (admin/test)
 
+**Tay cầm (Xbox / PlayStation / tay cầm chuẩn):** cắm vào hoặc kết nối Bluetooth rồi bấm 1 nút bất kỳ. Cần trái: đi (analog) · Cần phải: camera (R3 về sau lưng) · LB/LT: chạy · A/✕: nhảy, vào game, chơi lại · B/○: nằm, quay lại · X/□ giữ: gặm cỏ/uống · Y/△: moo · RB/RT: húc · D-pad ↑↓: zoom · D-pad ←: điện ảnh · View: clan · Menu: cài đặt. Có rung khi bị va chạm (tắt trong cài đặt).
+
 ## Thời gian, mùa & thời tiết
 
 - Ngày/đêm chạy liên tục: **1 ngày = 15 phút** thật, đồng bộ cho mọi người theo đồng hồ server.
