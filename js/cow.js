@@ -52,6 +52,13 @@ function makeSpotTexture(seed = 11, coat = COATS.holstein) {
   return tex;
 }
 
+export const JUMP_SPEED = 6.2;
+export const GRAVITY = 19;
+export const BUTT_TIME = 0.6;   // seconds for the whole headbutt move
+export const BUTT_HIT_AT = 0.45; // fraction of BUTT_TIME when the head connects
+
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
 export class Cow {
   constructor(scene, { coat = 'holstein', seed = 11 } = {}) {
     const C = COATS[coat] || COATS.holstein;
@@ -201,6 +208,64 @@ export class Cow {
     this.earTimer = 2;
     this.tailSwish = 0;
     this.onStep = null;
+    // jump / headbutt / knockback
+    this.air = 0;        // height above the ground
+    this.vy = 0;
+    this.buttT = 0;      // time left in the headbutt move
+    this.knock = new THREE.Vector2(); // knockback velocity (xz)
+    this.stun = 0;
+    this.onLand = null;
+  }
+
+  get grounded() { return this.air <= 0 && this.vy <= 0; }
+  get butting() { return this.buttT > 0; }
+  // 0..1 progress through the headbutt
+  get buttProgress() { return this.buttT > 0 ? 1 - this.buttT / BUTT_TIME : 0; }
+
+  jump(speed = JUMP_SPEED) {
+    if (!this.grounded) return false;
+    this.vy = speed;
+    this.grazeTimer = 0;
+    return true;
+  }
+
+  startButt() {
+    if (this.buttT > 0 || this.stun > 0) return false;
+    this.buttT = BUTT_TIME;
+    this.grazeTimer = 0;
+    return true;
+  }
+
+  // push this cow away (dx,dz normalised) with a little hop
+  knockback(dx, dz, power = 1) {
+    this.knock.set(dx * 9 * power, dz * 9 * power);
+    if (this.air < 0.3) this.vy = Math.max(this.vy, 4.2 * power);
+    this.stun = 0.6;
+    this.buttT = 0;
+    this._hurt = 0.5;
+  }
+
+  // integrate jump arc + knockback slide; returns true on the frame it lands
+  updatePhysics(dt) {
+    let landed = false;
+    if (this.air > 0 || this.vy > 0) {
+      this.vy -= GRAVITY * dt;
+      this.air += this.vy * dt;
+      if (this.air <= 0) {
+        landed = this.vy < -2;
+        if (landed && this.onLand) this.onLand(-this.vy);
+        this.air = 0;
+        this.vy = 0;
+      }
+    }
+    if (this.knock.lengthSq() > 1e-4) {
+      this.pos.x += this.knock.x * dt;
+      this.pos.z += this.knock.y * dt;
+      this.knock.multiplyScalar(Math.exp(-dt * 5));
+    }
+    if (this.buttT > 0) this.buttT = Math.max(0, this.buttT - dt);
+    if (this.stun > 0) this.stun = Math.max(0, this.stun - dt);
+    return landed;
   }
 
   dispose() {
@@ -221,15 +286,19 @@ export class Cow {
     this.phase += dt * freq * (moving ? 1 : 0) * Math.PI * 2 * Math.min(1, sp / 1.2 + 0.25);
     const amp = Math.min(0.62, sp * 0.2) * (running ? 1.15 : 1);
 
+    const airK = smooth(0.02, 0.25, this.air);
     for (const L of this.legs) {
       const s = Math.sin(this.phase + L.phase);
       const c = Math.cos(this.phase + L.phase);
-      L.hip.rotation.x = s * amp;
       // lift the lower leg during the forward swing
       const lift = Math.max(0, c) * amp * 1.3;
-      L.knee.rotation.x = L.front ? lift : lift * 0.7;
+      // in the air: front legs reach forward, hind legs kick back, knees fold
+      const tuckHip = L.front ? -0.55 : 0.5;
+      const tuckKnee = L.front ? 1.1 : 0.7;
+      L.hip.rotation.x = s * amp * (1 - airK) + tuckHip * airK;
+      L.knee.rotation.x = (L.front ? lift : lift * 0.7) * (1 - airK) + tuckKnee * airK;
       // foot plant event (when leg passes back through the stance start)
-      if (moving && L.lastS > 0 && s <= 0 && this.onStep) this.onStep(sp);
+      if (moving && airK < 0.1 && L.lastS > 0 && s <= 0 && this.onStep) this.onStep(sp);
       L.lastS = s;
     }
 
@@ -238,6 +307,21 @@ export class Cow {
     const breathe = Math.sin(this.time * 1.7) * 0.008;
     this.body.position.y = bob + breathe;
     this.body.rotation.z = moving ? Math.sin(this.phase) * 0.025 : 0;
+    // nose up while rising, nose down while falling
+    this.body.rotation.x = airK * THREE.MathUtils.clamp(-this.vy * 0.035, -0.2, 0.25);
+
+    // headbutt: wind up (lean back), thrust (lunge forward), recover
+    const p = this.buttProgress;
+    const windup = p > 0 ? smooth(0, 0.3, p) * (1 - smooth(0.3, 0.45, p)) : 0;
+    const thrust = p > 0 ? smooth(0.3, 0.45, p) * (1 - smooth(0.6, 1, p)) : 0;
+    this.body.position.z = -windup * 0.18 + thrust * 0.35;
+    this.body.rotation.x += windup * -0.06 + thrust * 0.1;
+
+    // hurt wobble after being knocked
+    if (this._hurt > 0) {
+      this._hurt = Math.max(0, this._hurt - dt);
+      this.body.rotation.z += Math.sin(this._hurt * 40) * this._hurt * 0.25;
+    }
 
     // grazing / head
     if (this.grazeTimer > 0) this.grazeTimer -= dt;
@@ -245,8 +329,8 @@ export class Cow {
     this.graze += (grazeTarget - this.graze) * Math.min(1, dt * 2.5);
     const chew = this.graze > 0.8 ? Math.sin(this.time * 9) * 0.04 : 0;
     const headBob = moving ? Math.sin(this.phase * 2) * 0.04 : Math.sin(this.time * 0.6) * 0.03;
-    this.neck.rotation.x = 0.1 + this.graze * 1.05 + headBob;
-    this.head.rotation.x = -0.05 + this.graze * 0.35 + chew;
+    this.neck.rotation.x = 0.1 + this.graze * 1.05 + headBob + windup * 0.55 + thrust * 0.75 - airK * 0.15;
+    this.head.rotation.x = -0.05 + this.graze * 0.35 + chew + thrust * 0.35;
     this.head.rotation.y = moving ? 0 : Math.sin(this.time * 0.35) * 0.25 * (1 - this.graze);
 
     // ears twitch

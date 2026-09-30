@@ -206,6 +206,70 @@ export class AudioSys {
     }
   }
 
+  _noiseBurst(t, type, freq, q, peak, dur, dest = this.master) {
+    const n = this.ctx.createBufferSource(); n.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = this.ctx.createGain();
+    this._env(g, t, 0.01, peak, dur);
+    n.connect(f).connect(g).connect(dest);
+    n.start(t, Math.random()); n.stop(t + dur + 0.02);
+    return f;
+  }
+
+  // effort "huff" + grass swish when jumping
+  jump(vol = 1) {
+    if (!this.ctx || !this.enabled || vol <= 0.01) return;
+    const t = this.ctx.currentTime;
+    const f = this._noiseBurst(t, 'bandpass', 700, 1.2, 0.12 * vol, 0.18);
+    f.frequency.setValueAtTime(500, t);
+    f.frequency.exponentialRampToValueAtTime(1400, t + 0.15);
+    this._noiseBurst(t, 'bandpass', 3000, 0.7, 0.06 * vol, 0.25);
+  }
+
+  // heavy landing thud, louder for harder landings
+  land(power = 1, vol = 1) {
+    if (!this.ctx || !this.enabled || vol <= 0.01) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const k = Math.min(1.3, power / 6) * vol;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(95, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + 0.2);
+    const g = ctx.createGain();
+    this._env(g, t, 0.008, 0.45 * k, 0.25);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + 0.26);
+    this._noiseBurst(t, 'lowpass', 400, 0.7, 0.25 * k, 0.18);
+    this._noiseBurst(t, 'bandpass', 2400, 0.6, 0.08 * k, 0.3);
+  }
+
+  // swoosh of the head swinging
+  whoosh(vol = 1) {
+    if (!this.ctx || !this.enabled || vol <= 0.01) return;
+    const t = this.ctx.currentTime + 0.12;
+    const f = this._noiseBurst(t, 'bandpass', 600, 2, 0.14 * vol, 0.22);
+    f.frequency.setValueAtTime(400, t);
+    f.frequency.exponentialRampToValueAtTime(1800, t + 0.2);
+  }
+
+  // cartoon "bonk" when two heads collide
+  bonk(vol = 1, pan = 0) {
+    if (!this.ctx || !this.enabled || vol <= 0.01) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    p.connect(this.master);
+    for (const [f0, f1, type, peak] of [[180, 70, 'sine', 0.7], [520, 260, 'triangle', 0.25]]) {
+      const o = ctx.createOscillator(); o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 0.18);
+      const g = ctx.createGain();
+      this._env(g, t, 0.004, peak * vol, 0.28);
+      o.connect(g).connect(p);
+      o.start(t); o.stop(t + 0.3);
+    }
+    this._noiseBurst(t, 'lowpass', 900, 0.8, 0.35 * vol, 0.12, p);
+  }
+
   thunder(delay = 0) {
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx, t = ctx.currentTime + delay;

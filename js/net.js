@@ -75,17 +75,19 @@ class Remote {
     c.heading += angleDiff(c.heading, t.h) * Math.min(1, dt * 10);
     c.speed += (t.sp - c.speed) * Math.min(1, dt * 8);
     c.grazeTimer = t.g > 0.5 ? 0.5 : 0;
+    c.updatePhysics(dt); // jump arcs are simulated locally from 'act' events
 
     const hx = Math.sin(c.heading), hz = Math.cos(c.heading);
     const hF = heightAt(c.pos.x + hx * 0.9, c.pos.z + hz * 0.9);
     const hB = heightAt(c.pos.x - hx * 0.9, c.pos.z - hz * 0.9);
     c.pos.y = (hF + hB) * 0.5;
     c.root.position.copy(c.pos);
+    c.root.position.y += c.air;
     c.root.rotation.y = c.heading;
     c.root.rotation.x += (-Math.atan2(hF - hB, 1.8) - c.root.rotation.x) * Math.min(1, dt * 6);
     // skip animation work for far-away cows
     if (camera.position.distanceToSquared(c.pos) < 150 * 150) c.animate(dt, t.sp > 3);
-    this.labelPos.set(c.pos.x, c.pos.y + 2.0, c.pos.z);
+    this.labelPos.set(c.pos.x, c.pos.y + c.air + 2.0, c.pos.z);
     this.tag.update(dt, this.labelPos, camera);
   }
   dispose() { this.cow.dispose(); this.tag.dispose(); }
@@ -193,6 +195,23 @@ export class Net {
       case 'env':
         this.h.onEnv(m);
         break;
+      case 'act': {
+        const r = this.remotes.get(m.id);
+        if (r) this.h.onRemoteAct(r, m.a);
+        break;
+      }
+      case 'hit': {
+        // we got headbutted
+        const r = this.remotes.get(m.from);
+        this.h.onHit(r || null, m.dx, m.dz);
+        break;
+      }
+      case 'hitfx': {
+        // someone else got headbutted (effects only; their position arrives via snapshots)
+        const a = this.remotes.get(m.from), b = this.remotes.get(m.to);
+        if (b) this.h.onRemoteHit(a || null, b);
+        break;
+      }
       case 'full':
         this.h.onSystem('Server đã đầy người chơi.');
         break;

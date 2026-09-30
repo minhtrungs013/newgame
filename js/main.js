@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Terrain, heightAt } from './terrain.js';
 import { Grass } from './grass.js';
-import { Cow } from './cow.js';
+import { Cow, BUTT_HIT_AT } from './cow.js';
 import { Sky } from './sky.js';
 import { Environment } from './environment.js';
 import { World } from './world.js';
@@ -50,7 +50,9 @@ const world = new World(scene);
 let cow = new Cow(scene);
 const audio = new AudioSys();
 const onStep = (sp) => audio.step(sp, env.weather.rain > 0.5);
+const onLand = (v) => { audio.land(v); state.shake = Math.max(state.shake, Math.min(0.2, v * 0.02)); };
 cow.onStep = onStep;
+cow.onLand = onLand;
 const selfTag = new NameTag($('tags'), '', true);
 const selfTagPos = new THREE.Vector3();
 
@@ -129,6 +131,9 @@ const state = {
   happy: 0.6, food: 0.5, distance: 0,
   lightningTimer: 12,
   chewTimer: 0,
+  shake: 0,            // camera shake amount
+  buttCooldown: 0,
+  buttChecked: true,   // hit test already done for the current headbutt
   obstacleTimer: 0,
 };
 
@@ -157,7 +162,12 @@ addEventListener('keydown', (e) => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F3'].includes(k)) e.preventDefault();
   if (e.repeat) { state.keys.add(k); return; }
   state.keys.add(k);
-  if (k === 'Space' && state.started) {
+  if (k === 'Space' && state.started && cow.stun <= 0 && cow.jump()) {
+    audio.jump();
+    net.send({ t: 'act', a: 'jump' });
+  }
+  if (k === 'KeyF' && state.started) tryButt();
+  if (k === 'KeyE' && state.started) {
     audio.moo();
     selfTag.say('Mooo~', 2);
     net.send({ t: 'moo' });
@@ -240,6 +250,7 @@ $('btn-start').addEventListener('click', () => {
   const old = cow;
   cow = new Cow(scene, { coat: chosenCoat, seed: 11 + Math.floor(Math.random() * 1000) });
   cow.onStep = onStep;
+  cow.onLand = onLand;
   cow.pos.copy(old.pos); cow.heading = old.heading;
   old.dispose();
   window.__game.cow = cow;
@@ -379,10 +390,33 @@ const net = new Net(scene, $('tags'), {
   },
   onRemoteMoo(r) {
     r.tag.say('Mooo~', 2);
-    const d = r.cow.pos.distanceTo(camera.position);
-    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
-    const pan = right.dot(new THREE.Vector3().subVectors(r.cow.pos, camera.position).normalize());
-    audio.moo(Math.max(0, 1 - d / 80), pan, 0.9 + (r.id % 5) * 0.06);
+    const { vol, pan } = spatial(r.cow.pos);
+    audio.moo(vol, pan, 0.9 + (r.id % 5) * 0.06);
+  },
+  onRemoteAct(r, a) {
+    const { vol } = spatial(r.cow.pos, 50);
+    if (a === 'jump') {
+      r.cow.onLand ??= (v) => audio.land(v, spatial(r.cow.pos, 50).vol);
+      if (r.cow.jump()) audio.jump(vol);
+    } else if (a === 'butt') {
+      if (r.cow.startButt()) audio.whoosh(vol);
+    }
+  },
+  onHit(r, dx, dz) {
+    // we got headbutted: fly back, hop, get dizzy for a moment
+    cow.knockback(dx, dz);
+    audio.bonk(1);
+    selfTag.say('Úi! 💥', 1.5);
+    state.shake = 0.45;
+    state.happy = Math.max(0, state.happy - 0.02);
+    toast(`${r ? r.name : 'Ai đó'} húc bạn! 💥`);
+  },
+  onRemoteHit(attacker, target) {
+    target.cow.vy = Math.max(target.cow.vy, 4.2);
+    target.cow._hurt = 0.5;
+    target.tag.say('Úi! 💥', 1.5);
+    const { vol, pan } = spatial(target.cow.pos, 50);
+    audio.bonk(vol, pan);
   },
   onEnv(m) {
     applyEnv(m, false);
@@ -415,13 +449,69 @@ function angleDiff(a, b) {
   return d;
 }
 
+// volume + stereo pan for a sound coming from a world position
+function spatial(pos, range = 80) {
+  const d = pos.distanceTo(camera.position);
+  const right = tmpV2.setFromMatrixColumn(camera.matrixWorld, 0);
+  const dir = tmpV3.subVectors(pos, camera.position).normalize();
+  return { vol: Math.max(0, 1 - d / range), pan: right.dot(dir) };
+}
+const tmpV2 = new THREE.Vector3(), tmpV3 = new THREE.Vector3();
+
+function tryButt() {
+  if (state.buttCooldown > 0 || cow.stun > 0 || !cow.startButt()) return;
+  state.buttCooldown = 0.9;
+  state.buttChecked = false;
+  audio.whoosh();
+  net.send({ t: 'act', a: 'butt' });
+}
+
+// at the moment the head connects: did we hit another cow (or a rock)?
+function checkButtHit() {
+  state.buttChecked = true;
+  const fx = Math.sin(cow.heading), fz = Math.cos(cow.heading);
+  let best = null, bestD = Infinity;
+  for (const r of net.remotes.values()) {
+    const dx = r.cow.pos.x - cow.pos.x, dz = r.cow.pos.z - cow.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d > 2.8 || d < 0.01) continue;
+    if ((dx * fx + dz * fz) / d < 0.45) continue; // must be in front of us
+    if (Math.abs(r.cow.air - cow.air) > 1.2) continue;
+    if (d < bestD) { best = r; bestD = d; }
+  }
+  if (best) {
+    net.send({ t: 'hit', to: best.id });
+    // instant feedback; the real knockback arrives with the target's next position updates
+    best.cow.vy = Math.max(best.cow.vy, 4.2);
+    best.cow._hurt = 0.5;
+    best.tag.say('Úi! 💥', 1.5);
+    audio.bonk(1);
+    state.shake = 0.3;
+    cow.speed *= 0.3;
+    state.happy = Math.min(1, state.happy + 0.02);
+    return;
+  }
+  // headbutting a rock or tree just bounces us back
+  for (const c of world.colliders) {
+    const dx = c.x - cow.pos.x, dz = c.z - cow.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d - c.r > 1.9 || d < 0.01 || (dx * fx + dz * fz) / d < 0.5) continue;
+    audio.bonk(0.8);
+    state.shake = 0.35;
+    cow.knockback(-fx, -fz, 0.45);
+    selfTag.say('Ui da…', 1.2);
+    return;
+  }
+}
+
 function updateCow(dt) {
   const k = state.keys;
   const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
   const r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
   let targetSpeed = 0;
-  if (state.started && (f || r)) {
+  const canControl = state.started && cow.stun <= 0;
+  if (canControl && (f || r)) {
     // camera-relative movement
     const fx = -Math.sin(state.camYaw), fz = -Math.cos(state.camYaw);
     const rx = Math.cos(state.camYaw), rz = -Math.sin(state.camYaw);
@@ -435,10 +525,23 @@ function updateCow(dt) {
   }
   // fatigue: a hungry cow runs slower
   targetSpeed *= 0.75 + 0.25 * Math.min(1, state.food * 2);
-  cow.speed += (targetSpeed - cow.speed) * Math.min(1, dt * (targetSpeed > cow.speed ? 2.5 : 4));
+  // keep momentum in the air, react faster on the ground
+  const accel = cow.grounded ? (targetSpeed > cow.speed ? 2.5 : 4) : 0.6;
+  cow.speed += (targetSpeed - cow.speed) * Math.min(1, dt * accel);
 
   const vx = Math.sin(cow.heading) * cow.speed, vz = Math.cos(cow.heading) * cow.speed;
   cow.pos.x += vx * dt; cow.pos.z += vz * dt;
+
+  // jump arc + knockback slide
+  cow.updatePhysics(dt);
+  // headbutt: short lunge forward, then the hit test when the head connects
+  state.buttCooldown = Math.max(0, state.buttCooldown - dt);
+  const bp = cow.buttProgress;
+  if (bp > 0.3 && bp < 0.55) {
+    cow.pos.x += Math.sin(cow.heading) * 5 * dt;
+    cow.pos.z += Math.cos(cow.heading) * 5 * dt;
+  }
+  if (!state.buttChecked && bp >= BUTT_HIT_AT) checkButtHit();
   // collisions
   for (const c of world.colliders) {
     const dx = cow.pos.x - c.x, dz = cow.pos.z - c.z;
@@ -469,6 +572,7 @@ function updateCow(dt) {
   cow.pos.y = (hF + hB) * 0.5;
   const pitch = Math.atan2(hF - hB, 1.8);
   cow.root.position.copy(cow.pos);
+  cow.root.position.y += cow.air;
   cow.root.rotation.y = cow.heading;
   cow.root.rotation.x += (-pitch - cow.root.rotation.x) * Math.min(1, dt * 6);
   cow.animate(dt, running);
@@ -499,7 +603,12 @@ function updateCamera(dt) {
   const targetDist = state.cinematic ? 10 : state.dist;
   state.camDist += (targetDist - state.camDist) * Math.min(1, dt * 5);
 
-  const target = tmpV.set(cow.pos.x, cow.pos.y + 1.2, cow.pos.z);
+  const target = tmpV.set(cow.pos.x, cow.pos.y + 1.2 + cow.air * 0.6, cow.pos.z);
+  // camera shake after bumps and landings
+  state.shake = Math.max(0, state.shake - dt * 1.5);
+  const sh = state.shake * state.shake;
+  target.x += (Math.random() - 0.5) * sh;
+  target.y += (Math.random() - 0.5) * sh;
   const cp = Math.cos(state.camPitch), d = state.camDist;
   camera.position.set(
     target.x + Math.sin(state.camYaw) * cp * d,
@@ -692,7 +801,7 @@ function frame() {
   updateEnvironment(dt);
   audio.update(dt, env, state.time);
   net.update(dt, cow, camera);
-  selfTagPos.set(cow.pos.x, cow.pos.y + 2.0, cow.pos.z);
+  selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + 2.0, cow.pos.z);
   selfTag.update(dt, selfTagPos, camera);
   renderer.render(scene, camera);
   drawMinimap();

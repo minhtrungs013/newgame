@@ -173,7 +173,11 @@ server.on('upgrade', (req, socket) => {
                `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
   socket.setNoDelay(true);
 
-  const p = { id: nextId++, name: 'Bò', coat: 'holstein', x: 0, z: 0, h: 0, sp: 0, g: 0, ready: false, dirty: false, lastChat: 0, chatBudget: 5 };
+  const p = {
+    id: nextId++, name: 'Bò', coat: 'holstein', x: 0, z: 0, h: 0, sp: 0, g: 0,
+    ready: false, dirty: false, lastChat: 0, chatBudget: 5,
+    lastJump: 0, lastButt: 0, lastHit: 0,
+  };
   p.conn = new Conn(socket, (text) => handle(p, text), () => {
     if (!players.has(p.id)) return;
     players.delete(p.id);
@@ -216,6 +220,31 @@ function handle(p, text) {
     case 'moo':
       if (p.ready) broadcast({ t: 'moo', id: p.id }, p);
       break;
+    case 'act': {
+      // visual actions other players should see: jump / headbutt
+      if (!p.ready) return;
+      const now = Date.now();
+      if (m.a === 'jump' && now - p.lastJump > 450) { p.lastJump = now; broadcast({ t: 'act', id: p.id, a: 'jump' }, p); }
+      if (m.a === 'butt' && now - p.lastButt > 700) { p.lastButt = now; broadcast({ t: 'act', id: p.id, a: 'butt' }, p); }
+      break;
+    }
+    case 'hit': {
+      // attacker reports a headbutt hit; the server checks it before knocking the target back
+      if (!p.ready) return;
+      const target = players.get(m.to);
+      const now = Date.now();
+      if (!target || target === p || !target.ready) return;
+      if (now - p.lastButt > 1200 || now - p.lastHit < 600) return; // must follow a real butt, no spamming
+      const dx = target.x - p.x, dz = target.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 4.5) return; // too far apart (allows for some network lag)
+      p.lastHit = now;
+      const nx = d > 0.01 ? dx / d : Math.sin(p.h), nz = d > 0.01 ? dz / d : Math.cos(p.h);
+      target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3) });
+      const fx = JSON.stringify({ t: 'hitfx', from: p.id, to: target.id });
+      for (const o of players.values()) if (o.ready && o !== p && o !== target) o.conn.send(fx);
+      break;
+    }
     case 'chat': {
       if (!p.ready) return;
       const now = Date.now();
