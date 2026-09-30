@@ -1,22 +1,13 @@
 import * as THREE from 'three';
 
-function mulberry32(a) {
-  return () => {
-    a |= 0; a = a + 0x6D2B79F5 | 0;
-    let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  };
-}
-
 // A cow's appearance ("look"). Kept small & JSON-friendly so it can be sent over the network.
 export const PATTERNS = ['none', 'few', 'many', 'patches'];
 export const HORNS = ['none', 'short', 'long'];
 export const ACCESSORIES = ['none', 'bell', 'hat', 'flowers', 'scarf'];
 export const PRESETS = {
-  holstein: { base: '#f2efe8', spot: '#121212', pattern: 'many', snout: '#dca59a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
-  brown:    { base: '#f0e8dc', spot: '#6b3a1e', pattern: 'many', snout: '#dca59a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
-  jersey:   { base: '#b9804a', spot: '#8a5a30', pattern: 'few',  snout: '#3a302a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
+  holstein: { base: '#f4f1ea', spot: '#141212', pattern: 'many', snout: '#d9a39a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
+  brown:    { base: '#f2ebe0', spot: '#5a2e16', pattern: 'many', snout: '#d9a39a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
+  jersey:   { base: '#b9804a', spot: '#7a4a26', pattern: 'few',  snout: '#3a302a', horns: 'short', size: 1, acc: 'none', accColor: '#d83a3a' },
   black:    { base: '#1f1d1c', spot: '#f0ede6', pattern: 'few',  snout: '#4a403c', horns: 'long',  size: 1, acc: 'none', accColor: '#d83a3a' },
 };
 export const DEFAULT_LOOK = PRESETS.holstein;
@@ -45,204 +36,415 @@ export function randomLook() {
   const light = new THREE.Color(base).getHSL({}).l > 0.5;
   return normalizeLook({
     base,
-    spot: light ? r(['#121212', '#6b3a1e', '#4a2c18', hsl(Math.random(), 0.6, 0.35)]) : r(['#f0ede6', '#e8d8c0', hsl(Math.random(), 0.5, 0.75)]),
-    pattern: r(PATTERNS), snout: r(['#dca59a', '#3a302a', '#8a7a74', '#e8b8a8']),
+    spot: light ? r(['#141212', '#5a2e16', '#4a2c18', hsl(Math.random(), 0.6, 0.35)]) : r(['#f0ede6', '#e8d8c0', hsl(Math.random(), 0.5, 0.75)]),
+    pattern: r(PATTERNS), snout: r(['#d9a39a', '#3a302a', '#8a7a74', '#e8b8a8']),
     horns: r(HORNS), size: 0.88 + Math.random() * 0.3,
     acc: r(ACCESSORIES), accColor: hsl(Math.random(), 0.7, 0.5),
   });
-}
-
-const PATTERN_BLOBS = { none: [0, 0, 0], few: [6, 40, 55], many: [16, 45, 75], patches: [5, 110, 80] };
-
-// Procedural hide: base colour with irregular patches of the spot colour.
-function makeSpotTexture(seed = 11, look = DEFAULT_LOOK) {
-  const W = 1024, H = 512;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  g.fillStyle = look.base;
-  g.fillRect(0, 0, W, H);
-  const rnd = mulberry32(seed);
-  g.fillStyle = look.spot;
-  const blob = (cx, cy, r) => {
-    for (let k = 0; k < 26; k++) {
-      const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * r * 0.75;
-      const rr = r * (0.18 + rnd() * 0.4);
-      const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d * 0.8;
-      for (const ox of [-W, 0, W]) {
-        g.beginPath(); g.arc(x + ox, y, rr, 0, Math.PI * 2); g.fill();
-      }
-    }
-  };
-  const [nBlobs, rMin, rVar] = PATTERN_BLOBS[look.pattern];
-  for (let i = 0; i < nBlobs; i++) blob(rnd() * W, 40 + rnd() * (H - 80), rMin + rnd() * rVar);
-  // fur grain
-  const img = g.getImageData(0, 0, W, H);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const n = (rnd() - 0.5) * 18;
-    img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n;
-  }
-  g.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.anisotropy = 4;
-  return tex;
 }
 
 export const JUMP_SPEED = 6.2;
 export const GRAVITY = 19;
 export const BUTT_TIME = 0.6;   // seconds for the whole headbutt move
 export const BUTT_HIT_AT = 0.45; // fraction of BUTT_TIME when the head connects
+export const CALF_SIZE = 0.5;   // body scale of a new-born calf (age 0)
 
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+const gauss = (x, mu, s) => Math.exp(-((x - mu) * (x - mu)) / (2 * s * s));
+
+// ---------------------------------------------------------------------------
+// Geometry helpers
+// ---------------------------------------------------------------------------
+
+// Merge duplicated seam/pole vertices so smooth normals have no visible seams.
+function weld(geo) {
+  const pos = geo.attributes.position;
+  const idx = geo.index ? geo.index.array : Array.from({ length: pos.count }, (_, i) => i);
+  const map = new Map(), out = [], remap = new Uint32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+    let j = map.get(key);
+    if (j === undefined) { j = out.length / 3; map.set(key, j); out.push(x, y, z); }
+    remap[i] = j;
+  }
+  const tri = [];
+  for (let k = 0; k < idx.length; k += 3) {
+    const a = remap[idx[k]], b = remap[idx[k + 1]], c = remap[idx[k + 2]];
+    if (a !== b && b !== c && a !== c) tri.push(a, b, c);
+  }
+  geo.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  g.setIndex(tri);
+  g.computeVertexNormals();
+  return g;
+}
+
+// Unit sphere with its poles on the z axis, reshaped by fn(x, y, z, t) -> [X, Y, Z]
+// where t runs 0 (back pole) .. 1 (front pole).
+function sculpt(wSeg, hSeg, fn) {
+  const g = new THREE.SphereGeometry(1, wSeg, hSeg);
+  g.rotateX(Math.PI / 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const [X, Y, Z] = fn(x, y, z, (z + 1) / 2);
+    p.setXYZ(i, X, Y, Z);
+  }
+  return weld(g);
+}
+
+// Tube along a curve whose cross-section radius (and ellipse) varies with t.
+function taperedTube(points, tubular, radial, radiusAt, squashX = 1, squashLowY = 1) {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const g = new THREE.TubeGeometry(curve, tubular, 1, radial, false);
+  const p = g.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    const t = Math.floor(i / (radial + 1)) / tubular;
+    curve.getPointAt(t, c);
+    v.fromBufferAttribute(p, i).sub(c).multiplyScalar(radiusAt(t));
+    v.x *= squashX;
+    if (v.y < 0) v.y *= squashLowY;
+    p.setXYZ(i, c.x + v.x, c.y + v.y, c.z + v.z);
+  }
+  return { geo: weld(g), curve };
+}
+
+// Surface of revolution around Y from [radius, y] pairs (top -> bottom).
+function lathe(profile, seg = 18) {
+  return weld(new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(Math.max(r, 0.0005), y)), seg));
+}
+
+// ---------------------------------------------------------------------------
+// Hide shader: seamless 3D-noise patches with ragged edges + fur grain + fur bump.
+// Pattern coordinates come from each vertex's rest position in cow space (aRest),
+// so markings flow continuously across body, neck, head and legs.
+// ---------------------------------------------------------------------------
+const NOISE_GLSL = /* glsl */`
+vec3 cw_mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 cw_mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+vec4 cw_permute(vec4 x) { return cw_mod289(((x * 34.0) + 1.0) * x); }
+vec4 cw_invSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+float cw_snoise(vec3 v) {
+  const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = cw_mod289(i);
+  vec4 p = cw_permute(cw_permute(cw_permute(
+      i.z + vec4(0.0, i1.z, i2.z, 1.0)) + i.y + vec4(0.0, i1.y, i2.y, 1.0)) + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0) * 2.0 + 1.0;
+  vec4 s1 = floor(b1) * 2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = cw_invSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+}
+float cw_fbm(vec3 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { v += a * cw_snoise(p); p = p * 2.03 + 17.1; a *= 0.45; }
+  return v;
+}
+vec3 cw_perturb(vec3 surfPos, vec3 surfNorm, vec2 dHdxy, float faceDir) {
+  vec3 sx = normalize(dFdx(surfPos)), sy = normalize(dFdy(surfPos));
+  vec3 r1 = cross(sy, surfNorm), r2 = cross(surfNorm, sx);
+  float det = dot(sx, r1) * faceDir;
+  vec3 grad = sign(det) * (dHdxy.x * r1 + dHdxy.y * r2);
+  return normalize(abs(det) * surfNorm - grad);
+}
+`;
+
+const PATTERN_PARAMS = { none: [1.2, 9.0], few: [1.15, 0.3], many: [1.25, 0.03], patches: [0.75, 0.0] }; // [freq, threshold]
+
+function makeHideMaterial(look, seed) {
+  const [freq, thresh] = PATTERN_PARAMS[look.pattern];
+  const uniforms = {
+    uBase: { value: new THREE.Color(look.base) },
+    uSpot: { value: new THREE.Color(look.spot) },
+    uFreq: { value: freq },
+    uThresh: { value: thresh },
+    uSeed: { value: new THREE.Vector3((seed * 0.37) % 53, (seed * 0.71) % 47, (seed * 1.13) % 59) },
+  };
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0 });
+  mat.customProgramCacheKey = () => 'cow-hide-v2';
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec3 aRest;\nvarying vec3 vRest;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRest = aRest;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>
+uniform vec3 uBase, uSpot, uSeed;
+uniform float uFreq, uThresh;
+varying vec3 vRest;
+${NOISE_GLSL}`)
+      .replace('#include <map_fragment>', `
+  vec3 cp = vRest;
+  float f = cw_fbm(cp * uFreq + uSeed)
+          + cw_snoise(cp * 6.0 + uSeed * 1.7) * 0.07
+          + cw_snoise(cp * 17.0 - uSeed) * 0.03;
+  float spotK = smoothstep(uThresh - 0.012, uThresh + 0.012, f);
+  // classic white areas: socks, belly line, face blaze
+  spotK *= smoothstep(0.30, 0.46, cp.y);
+  spotK *= 1.0 - (1.0 - smoothstep(0.62, 0.72, cp.y)) * (1.0 - smoothstep(0.18, 0.3, abs(cp.x))) * step(-1.0, cp.z) * step(cp.z, 0.9);
+  spotK *= 1.0 - step(1.42, cp.z) * (1.0 - smoothstep(0.03, 0.075, abs(cp.x)));
+  float fur1 = cw_snoise(cp * vec3(150.0, 60.0, 150.0));
+  float fur2 = cw_snoise(cp * vec3(340.0, 130.0, 340.0));
+  vec3 hide = mix(uBase, uSpot, spotK);
+  hide *= 0.93 + 0.05 * fur1 + 0.035 * fur2;
+  diffuseColor.rgb *= hide;
+`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + fur2 * 0.08, 0.0, 1.0);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  {
+    float furH = fur1 * 0.6 + fur2 * 0.4;
+    float furFade = 1.0 - smoothstep(3.0, 14.0, length(vViewPosition));
+    vec2 dH = vec2(dFdx(furH), dFdy(furH)) * 0.012 * furFade;
+    normal = cw_perturb(-vViewPosition, normal, dH, faceDirection);
+  }`);
+  };
+  mat.userData.hide = true;
+  return mat;
+}
+
+// ---------------------------------------------------------------------------
+// Shapes (cow space: ground at y = 0, facing +z, adult ~2.2 m long)
+// ---------------------------------------------------------------------------
+function barrelGeometry() {
+  return sculpt(80, 56, (x, y, z, t) => {
+    const hw = 0.37 + 0.05 * Math.sin(Math.PI * t) + 0.035 * gauss(t, 0.16, 0.1) - 0.05 * gauss(t, 0.97, 0.07);
+    const top = 0.33 + 0.035 * gauss(t, 0.17, 0.1) + 0.05 * gauss(t, 0.84, 0.12);
+    const bot = 0.39 + 0.075 * Math.sin(Math.PI * t) - 0.06 * gauss(t, 0.02, 0.1);
+    const sx = Math.sign(x) * Math.pow(Math.abs(x), 0.9);
+    const Y = y > 0 ? Math.pow(y, 0.85) * top : y * bot;
+    // flatter rump end
+    const Z = z < 0 ? -Math.pow(-z, 1.25) * 1.04 : z * 1.0;
+    return [sx * hw, Y, Z];
+  });
+}
+
+function skullGeometry() {
+  return sculpt(56, 40, (x, y, z, t) => {
+    const halfW = 0.2 * (1 - t) + 0.12 * t + 0.03 * gauss(t, 0.3, 0.14);
+    const top = 0.165 * (1 - t) + 0.095 * t;
+    const bot = 0.15 * (1 - t) + 0.095 * t + 0.035 * gauss(t, 0.45, 0.15);
+    const yc = -0.02 - 0.03 * t;
+    const sx = Math.sign(x) * Math.pow(Math.abs(x), 0.85);
+    const Y = (y > 0 ? Math.pow(y, 0.75) * top : y * bot) + yc;
+    return [sx * halfW, Y, t * 0.62 - 0.08];
+  });
+}
 
 export class Cow {
-  constructor(scene, { look, coat, seed = 11 } = {}) {
+  constructor(scene, { look, coat, seed = 11, age = 1 } = {}) {
     const L = this.look = normalizeLook(look || PRESETS[coat] || DEFAULT_LOOK);
-    this.size = L.size;
+    this.adultSize = L.size;
     this.scene = scene;
     this.root = new THREE.Group();
     this.root.rotation.order = 'YXZ';
     scene.add(this.root);
 
-    const spotTex = this.spotTex = makeSpotTexture(seed, L);
-    const spot = new THREE.MeshStandardMaterial({ map: spotTex, roughness: 0.85 });
-    // "white" = plain hide (face, legs); "black" = marking colour (eye patch, one ear)
-    const white = new THREE.MeshStandardMaterial({ color: L.base, roughness: 0.85 });
-    const black = new THREE.MeshStandardMaterial({ color: L.pattern === 'none' ? L.base : L.spot, roughness: 0.7 });
-    const pink = new THREE.MeshStandardMaterial({ color: L.snout, roughness: 0.6 });
-    const udderMat = new THREE.MeshStandardMaterial({ color: 0xdca59a, roughness: 0.6 });
-    const horn = new THREE.MeshStandardMaterial({ color: 0xe6dcc4, roughness: 0.5 });
-    const hoof = new THREE.MeshStandardMaterial({ color: 0x2a2420, roughness: 0.6 });
-    const eye = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.15 });
-    this.materials = [spot, white, black, pink, horn, hoof, eye, udderMat];
-    this.root.scale.setScalar(L.size);
+    const hide = makeHideMaterial(L, seed);
+    const skin = new THREE.MeshStandardMaterial({ color: L.snout, roughness: 0.5 });
+    const udderMat = new THREE.MeshStandardMaterial({ color: 0xe0a89c, roughness: 0.55 });
+    const earInner = new THREE.MeshStandardMaterial({ color: 0xd99a90, roughness: 0.7, side: THREE.DoubleSide });
+    const hornMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45 });
+    const hoof = new THREE.MeshStandardMaterial({ color: 0x2a221e, roughness: 0.55 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x241816, roughness: 0.6 });
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x3a2214, roughness: 0.08 });
+    const pupil = new THREE.MeshStandardMaterial({ color: 0x050303, roughness: 0.05 });
+    this.materials = [hide, skin, udderMat, earInner, hornMat, hoof, dark, eyeMat, pupil];
 
     const M = (geo, mat, parent, x = 0, y = 0, z = 0) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       m.castShadow = true;
+      m.receiveShadow = true;
       parent.add(m);
       return m;
     };
 
-    // body group (bobbing while walking)
     const body = this.body = new THREE.Group();
     this.root.add(body);
 
-    const torso = M(new THREE.CapsuleGeometry(0.46, 1.15, 10, 24), spot, body, 0, 1.08, -0.02);
-    torso.rotation.x = Math.PI / 2;
-    torso.scale.set(0.95, 1, 1.12);
-    // shoulders & haunches for a less tube-like silhouette
-    const shoulder = M(new THREE.SphereGeometry(0.47, 20, 14), spot, body, 0, 1.15, 0.55);
-    shoulder.scale.set(0.95, 1.05, 1);
-    const hip = M(new THREE.SphereGeometry(0.47, 20, 14), spot, body, 0, 1.12, -0.62);
-    hip.scale.set(1.0, 1.02, 0.95);
-    hip.material = spot;
+    // --- trunk ---
+    this.barrel = M(barrelGeometry(), hide, body, 0, 1.05, -0.05);
+    const brisket = M(new THREE.SphereGeometry(0.2, 20, 14), hide, body, 0, 0.82, 0.72);
+    brisket.scale.set(1.1, 1, 1.1);
 
-    // udder
-    const udder = M(new THREE.SphereGeometry(0.17, 16, 12), udderMat, body, 0, 0.62, -0.45);
-    udder.scale.set(1.1, 0.8, 1.2);
-    for (const [x, z] of [[0.07, 0.07], [-0.07, 0.07], [0.07, -0.07], [-0.07, -0.07]]) {
-      M(new THREE.CylinderGeometry(0.02, 0.025, 0.09, 6), udderMat, body, x, 0.5, -0.45 + z);
+    // udder + teats
+    const udder = this.udder = new THREE.Group();
+    udder.position.set(0, 0.63, -0.5);
+    body.add(udder);
+    M(new THREE.SphereGeometry(0.16, 20, 14), udderMat, udder).scale.set(1.15, 0.8, 1.25);
+    for (const [x, z] of [[0.07, 0.08], [-0.07, 0.08], [0.07, -0.08], [-0.07, -0.08]]) {
+      M(new THREE.CapsuleGeometry(0.018, 0.06, 4, 8), udderMat, udder, x, -0.14, z);
     }
 
-    // legs: hip pivot -> upper -> knee pivot -> lower + hoof
+    // --- legs: hip pivot -> upper leg -> knee pivot -> lower leg + hoof ---
     this.legs = [];
     const legDefs = [
-      { x: 0.25, z: 0.62, front: true, phase: Math.PI * 0.5 },   // front left
-      { x: -0.25, z: 0.62, front: true, phase: Math.PI * 1.5 },  // front right
-      { x: 0.25, z: -0.66, front: false, phase: 0 },             // back left
-      { x: -0.25, z: -0.66, front: false, phase: Math.PI },      // back right
+      { x: 0.2, z: 0.62, front: true, phase: Math.PI * 0.5 },
+      { x: -0.2, z: 0.62, front: true, phase: Math.PI * 1.5 },
+      { x: 0.22, z: -0.7, front: false, phase: 0 },
+      { x: -0.22, z: -0.7, front: false, phase: Math.PI },
     ];
+    const upperFront = [[0, 0.18], [0.13, 0.16], [0.15, 0.02], [0.125, -0.2], [0.088, -0.4], [0.084, -0.48], [0.07, -0.52], [0, -0.53]];
+    const upperHind = [[0, 0.2], [0.17, 0.18], [0.19, 0.0], [0.15, -0.2], [0.094, -0.42], [0.1, -0.48], [0.075, -0.53], [0, -0.54]];
+    const lower = [[0, 0.06], [0.07, 0.04], [0.074, -0.02], [0.058, -0.1], [0.05, -0.24], [0.062, -0.3], [0.056, -0.345], [0, -0.35]];
+    const hoofProfile = [[0, -0.345], [0.052, -0.345], [0.064, -0.4], [0.07, -0.45], [0, -0.45]];
     for (const d of legDefs) {
       const hipP = new THREE.Group();
       hipP.position.set(d.x, 0.95, d.z);
       body.add(hipP);
-      const thigh = M(new THREE.SphereGeometry(0.16, 12, 10), spot, hipP, 0, 0, 0);
-      thigh.scale.set(0.9, 1.6, 1.2);
-      M(new THREE.CylinderGeometry(0.1, 0.075, 0.5, 10), d.front ? white : spot, hipP, 0, -0.27, 0);
+      const up = M(lathe(d.front ? upperFront : upperHind), hide, hipP);
+      up.scale.set(d.front ? 0.75 : 0.68, 1, 1);
+      // muscle mass joining the leg to the trunk (shoulder / haunch)
+      const mass = M(new THREE.SphereGeometry(1, 20, 14), hide, hipP, d.x > 0 ? -0.05 : 0.05, 0.16, d.front ? 0.02 : 0.0);
+      mass.scale.set(d.front ? 0.1 : 0.1, d.front ? 0.24 : 0.24, d.front ? 0.17 : 0.18);
       const knee = new THREE.Group();
       knee.position.y = -0.5;
       hipP.add(knee);
-      M(new THREE.SphereGeometry(0.075, 10, 8), white, knee);
-      M(new THREE.CylinderGeometry(0.065, 0.06, 0.34, 10), white, knee, 0, -0.18, 0);
-      M(new THREE.CylinderGeometry(0.075, 0.085, 0.09, 10), hoof, knee, 0, -0.38, 0.01);
+      M(lathe(lower), hide, knee).scale.set(0.85, 1, 1);
+      M(lathe(hoofProfile, 14), hoof, knee, 0, 0, 0.012);
+      M(new THREE.BoxGeometry(0.008, 0.07, 0.09), dark, knee, 0, -0.415, 0.05); // cleft between the toes
       this.legs.push({ hip: hipP, knee, ...d, lastS: 0 });
     }
 
-    // neck + head
+    // --- neck ---
     const neck = this.neck = new THREE.Group();
-    neck.position.set(0, 1.32, 0.9);
+    neck.position.set(0, 1.22, 0.78);
     body.add(neck);
-    const neckMesh = M(new THREE.CapsuleGeometry(0.27, 0.35, 8, 16), spot, neck, 0, 0.02, 0.2);
-    neckMesh.rotation.x = Math.PI / 2 - 0.55;
-    // dewlap
-    const dew = M(new THREE.SphereGeometry(0.2, 12, 10), white, neck, 0, -0.2, 0.25);
-    dew.scale.set(0.7, 1.1, 1.3);
+    const neckTube = taperedTube(
+      [new THREE.Vector3(0, -0.16, -0.14), new THREE.Vector3(0, -0.04, 0.12), new THREE.Vector3(0, 0.09, 0.38), new THREE.Vector3(0, 0.19, 0.6)],
+      28, 20, (t) => 0.29 - 0.12 * t, 0.74, 1.15,
+    );
+    M(neckTube.geo, hide, neck);
+    const dewlap = M(new THREE.SphereGeometry(1, 16, 12), hide, neck, 0, -0.2, 0.18);
+    dewlap.scale.set(0.07, 0.17, 0.26);
 
+    // --- head (origin at the poll) ---
     const head = this.head = new THREE.Group();
-    head.position.set(0, 0.2, 0.55);
+    head.position.set(0, 0.2, 0.6);
     neck.add(head);
-    const skull = M(new THREE.SphereGeometry(0.25, 20, 16), white, head, 0, 0, 0.12);
-    skull.scale.set(1, 1.05, 1.5);
-    skull.rotation.x = 0.45;
-    // black patch over one eye
-    const patch = M(new THREE.SphereGeometry(0.2, 14, 10), black, head, 0.11, 0.05, 0.08);
-    patch.scale.set(0.8, 0.9, 1.1);
-    patch.visible = L.pattern !== 'none';
-    const snout = M(new THREE.SphereGeometry(0.19, 18, 12), pink, head, 0, -0.16, 0.43);
-    snout.scale.set(1.15, 0.85, 0.9);
-    M(new THREE.SphereGeometry(0.035, 8, 6), black, head, 0.08, -0.12, 0.6);
-    M(new THREE.SphereGeometry(0.035, 8, 6), black, head, -0.08, -0.12, 0.6);
+    const face = this.face = new THREE.Group();
+    face.rotation.x = 0.75; // nose points down/forward
+    head.add(face);
+    M(skullGeometry(), hide, face);
+    const muzzle = M(new THREE.SphereGeometry(1, 28, 20), skin, face, 0, -0.065, 0.55);
+    muzzle.scale.set(0.135, 0.1, 0.1);
     for (const s of [1, -1]) {
-      M(new THREE.SphereGeometry(0.045, 10, 8), eye, head, s * 0.2, 0.07, 0.2);
+      const n = M(new THREE.SphereGeometry(1, 12, 8), dark, face, s * 0.055, -0.04, 0.635);
+      n.scale.set(0.024, 0.017, 0.012);
+      n.rotation.z = s * 0.4;
+    }
+    const lip = M(new THREE.TorusGeometry(0.075, 0.006, 6, 20, Math.PI), dark, face, 0, -0.12, 0.575);
+    lip.rotation.set(Math.PI / 2 - 0.2, 0, Math.PI);
+    const chin = M(new THREE.SphereGeometry(1, 16, 10), hide, face, 0, -0.14, 0.47);
+    chin.scale.set(0.09, 0.055, 0.1);
+    for (const s of [1, -1]) {
+      // eye: glossy brown ball, dark pupil, lid ring
+      const eye = new THREE.Group();
+      eye.position.set(s * 0.178, 0.045, 0.13);
+      face.add(eye);
+      M(new THREE.SphereGeometry(0.036, 16, 12), eyeMat, eye);
+      const pu = M(new THREE.SphereGeometry(0.02, 12, 8), pupil, eye, s * 0.024, 0, 0.004);
+      pu.scale.set(0.5, 0.7, 1.2);
+      const lid = M(new THREE.TorusGeometry(0.037, 0.011, 8, 20), hide, eye, s * 0.005, 0, 0);
+      lid.rotation.y = Math.PI / 2;
+      const brow = M(new THREE.SphereGeometry(1, 12, 8), hide, eye, s * 0.004, 0.028, -0.004);
+      brow.scale.set(0.03, 0.014, 0.045);
+    }
+
+    // ears: cupped, pink inside, sticking out sideways below the horns
+    for (const s of [1, -1]) {
       const ear = new THREE.Group();
-      ear.position.set(s * 0.26, 0.12, 0.0);
+      ear.position.set(s * 0.17, -0.01, 0.03);
       ear.rotation.z = -s * 0.35;
       head.add(ear);
-      const earM = M(new THREE.SphereGeometry(0.12, 12, 8), s > 0 ? black : white, ear, s * 0.1, 0, 0);
-      earM.scale.set(1.5, 0.35, 0.8);
-      const inner = M(new THREE.SphereGeometry(0.09, 10, 6), udderMat, ear, s * 0.11, -0.03, 0.01);
-      inner.scale.set(1.4, 0.2, 0.65);
+      const outer = M(new THREE.SphereGeometry(1, 20, 12), hide, ear, s * 0.13, 0, 0);
+      outer.scale.set(0.14, 0.075, 0.035);
+      const inner = M(new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), earInner, ear, s * 0.13, 0, 0.012);
+      inner.scale.set(0.12, 0.06, 0.03);
+      inner.rotation.x = -Math.PI / 2;
       if (s > 0) this.earL = ear; else this.earR = ear;
-      // horns: two segments curving up & out
-      const h1 = new THREE.Group();
-      h1.position.set(s * 0.14, 0.22, 0.02);
-      h1.rotation.z = -s * 1.1;
-      h1.visible = L.horns !== 'none';
-      if (L.horns === 'long') { h1.scale.set(1.25, 1.9, 1.25); h1.rotation.z = -s * 1.25; }
-      head.add(h1);
-      M(new THREE.CylinderGeometry(0.028, 0.045, 0.16, 8), horn, h1, 0, 0.08, 0);
-      const h2 = new THREE.Group();
-      h2.position.y = 0.16;
-      h2.rotation.z = s * 0.9;
-      h1.add(h2);
-      M(new THREE.ConeGeometry(0.028, 0.14, 8), horn, h2, 0, 0.07, 0);
     }
-    // forelock tuft
-    M(new THREE.SphereGeometry(0.1, 10, 8), white, head, 0, 0.24, 0.05).scale.set(1.3, 0.6, 1);
 
-    // tail: chain of segments hanging from the rump
+    // horns: tapered curve, cream at the base -> dark tip
+    this.horns = [];
+    for (const s of [1, -1]) {
+      const long = L.horns === 'long';
+      const k = long ? 1.7 : 1;
+      const pts = [
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(s * 0.09 * k, 0.03 * k, 0.01),
+        new THREE.Vector3(s * 0.16 * k, 0.1 * k, 0.04 * k),
+        new THREE.Vector3(s * 0.18 * k, 0.19 * k, 0.07 * k),
+      ];
+      const { geo } = taperedTube(pts, 16, 10, (t) => 0.036 * (1 - t) + 0.006 * t);
+      const col = [], cA = new THREE.Color(0xe8dcc0), cB = new THREE.Color(0x3a3228), tmp = new THREE.Color();
+      const p = geo.attributes.position, curveLen = pts[3].length() || 1;
+      for (let i = 0; i < p.count; i++) {
+        const d = Math.min(1, new THREE.Vector3(p.getX(i), p.getY(i), p.getZ(i)).length() / curveLen);
+        tmp.copy(cA).lerp(cB, smooth(0.55, 1, d));
+        col.push(tmp.r, tmp.g, tmp.b);
+      }
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      const hornGroup = new THREE.Group();
+      hornGroup.position.set(s * 0.1, 0.07, 0.01);
+      head.add(hornGroup);
+      M(geo, hornMat, hornGroup);
+      hornGroup.visible = L.horns !== 'none';
+      this.horns.push(hornGroup);
+    }
+    const poll = M(new THREE.SphereGeometry(1, 16, 10), hide, head, 0, 0.07, 0.02);
+    poll.scale.set(0.12, 0.05, 0.08);
+
+    // --- tail: chain of segments, hair switch at the end ---
     this.tail = [];
-    let parent = new THREE.Group();
-    parent.position.set(0, 1.45, -1.12);
-    parent.rotation.x = 0.05;
+    let parent = this.tailRoot = new THREE.Group();
+    parent.position.set(0, 1.25, -1.0);
     body.add(parent);
-    this.tailRoot = parent;
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       const seg = new THREE.Group();
-      seg.position.y = i === 0 ? 0 : -0.14;
+      seg.position.y = i === 0 ? 0 : -0.1;
       parent.add(seg);
-      M(new THREE.CylinderGeometry(0.03, 0.035, 0.15, 6), i < 2 ? spot : white, seg, 0, -0.07, 0);
+      const r = 0.03 - i * 0.0018;
+      M(new THREE.CylinderGeometry(r * 0.92, r, 0.11, 8), hide, seg, 0, -0.05, 0);
       this.tail.push(seg);
       parent = seg;
     }
-    const tuft = M(new THREE.SphereGeometry(0.07, 10, 8), white, parent, 0, -0.2, 0);
-    tuft.scale.set(0.9, 1.8, 0.9);
+    const sw = M(new THREE.SphereGeometry(1, 14, 10), hide, parent, 0, -0.2, 0);
+    sw.scale.set(0.055, 0.17, 0.05);
 
     this._buildAccessory(L, M);
+    this._bakeRestPositions();
 
     // state
     this.pos = new THREE.Vector3();
@@ -262,6 +464,48 @@ export class Cow {
     this.knock = new THREE.Vector2(); // knockback velocity (xz)
     this.stun = 0;
     this.onLand = null;
+    this.setAge(age);
+  }
+
+  // Store every hide vertex's rest-pose position in cow space; the hide shader
+  // uses it so the pattern sticks to the skin while legs/neck/tail animate.
+  _bakeRestPositions() {
+    this.root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(this.root.matrixWorld).invert();
+    const m = new THREE.Matrix4(), v = new THREE.Vector3();
+    this.root.traverse((o) => {
+      if (!o.isMesh || !o.material.userData.hide) return;
+      m.multiplyMatrices(inv, o.matrixWorld);
+      const p = o.geometry.attributes.position;
+      const rest = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(m);
+        rest[i * 3] = v.x; rest[i * 3 + 1] = v.y; rest[i * 3 + 2] = v.z;
+      }
+      o.geometry.setAttribute('aRest', new THREE.BufferAttribute(rest, 3));
+    });
+  }
+
+  // age 0 = new-born calf (small, big head, no horns/udder), 1 = adult
+  setAge(age) {
+    age = Math.min(1, Math.max(0, age));
+    this.age = age;
+    this.size = CALF_SIZE + (this.adultSize - CALF_SIZE) * age;
+    this.root.scale.setScalar(this.size);
+    const young = 1 - age;
+    this.head.scale.setScalar(1 + 0.32 * young);
+    const sy = 1 - 0.1 * young, sz = 1 - 0.14 * young;
+    this.barrel.scale.set(1 - 0.06 * young, sy, sz);
+    // keep the tail attached to the (shorter) rump
+    this.tailRoot.position.set(0, 1.05 + 0.2 * sy, -0.05 - 0.95 * sz);
+    const hornK = smooth(0.25, 0.9, age);
+    for (const h of this.horns) {
+      h.visible = this.look.horns !== 'none' && hornK > 0.02;
+      h.scale.setScalar(Math.max(0.001, hornK));
+    }
+    const udderK = smooth(0.7, 1, age);
+    this.udder.visible = udderK > 0.02;
+    this.udder.scale.setScalar(Math.max(0.001, udderK));
   }
 
   get grounded() { return this.air <= 0 && this.vy <= 0; }
@@ -286,7 +530,7 @@ export class Cow {
   // push this cow away (dx,dz normalised) with a little hop
   knockback(dx, dz, power = 1) {
     this.knock.set(dx * 9 * power, dz * 9 * power);
-    if (this.air < 0.3) this.vy = Math.max(this.vy, 4.2 * power);
+    if (this.air < 0.3) this.vy = Math.max(this.vy, 4.2 * Math.min(power, 1.3));
     this.stun = 0.6;
     this.buttT = 0;
     this._hurt = 0.5;
@@ -323,41 +567,41 @@ export class Cow {
       return m;
     };
     const accMat = mat(L.accColor);
-    // ring around the neck, following the neck's forward-up tilt
+    // ring around the middle of the neck, following its forward-up tilt
     const collar = (radius, tube, material) => {
-      const ring = M(new THREE.TorusGeometry(radius, tube, 8, 24), material, this.neck, 0, 0.0, 0.18);
-      ring.rotation.x = -0.55;
+      const ring = M(new THREE.TorusGeometry(radius, tube, 10, 32), material, this.neck, 0, 0.06, 0.26);
+      ring.rotation.x = -0.25;
+      ring.scale.set(0.78, 1.08, 1);
       return ring;
     };
     if (L.acc === 'bell') {
-      collar(0.29, 0.035, mat(0x5a3a22));
+      collar(0.29, 0.03, mat(0x5a3a22, { roughness: 0.8 }));
       const gold = mat(0xd4a93a, { metalness: 0.85, roughness: 0.3 });
-      const bell = M(new THREE.SphereGeometry(0.075, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62), gold, this.neck, 0, -0.33, 0.33);
+      const bell = M(new THREE.SphereGeometry(0.075, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), gold, this.neck, 0, -0.28, 0.33);
       bell.scale.y = 1.25;
-      M(new THREE.SphereGeometry(0.022, 6, 6), gold, this.neck, 0, -0.41, 0.33);
+      M(new THREE.SphereGeometry(0.022, 8, 6), gold, this.neck, 0, -0.36, 0.33);
     } else if (L.acc === 'scarf') {
-      collar(0.3, 0.07, accMat).scale.z = 1.6;
-      const tail = M(new THREE.BoxGeometry(0.12, 0.34, 0.05), accMat, this.neck, 0.12, -0.34, 0.36);
+      collar(0.29, 0.07, accMat).scale.z = 1.5;
+      const tail = M(new THREE.BoxGeometry(0.12, 0.34, 0.04), accMat, this.neck, 0.1, -0.33, 0.36);
       tail.rotation.set(0.3, 0, 0.25);
     } else if (L.acc === 'hat') {
       // Vietnamese conical hat (nón lá) with a coloured chin strap
-      const straw = mat(0xd9c28a, { roughness: 0.9 });
-      const hat = M(new THREE.ConeGeometry(0.44, 0.3, 24, 1, true), straw, this.head, 0, 0.42, 0.06);
-      hat.material.side = THREE.DoubleSide;
-      hat.rotation.x = -0.15;
-      const rim = M(new THREE.TorusGeometry(0.44, 0.012, 6, 32), straw, this.head, 0, 0.27, 0.08);
-      rim.rotation.x = Math.PI / 2 - 0.15;
-      const strap = M(new THREE.TorusGeometry(0.27, 0.012, 6, 24, Math.PI), accMat, this.head, 0, 0.26, 0.08);
+      const straw = mat(0xd9c28a, { roughness: 0.9, side: THREE.DoubleSide });
+      const hat = M(new THREE.ConeGeometry(0.42, 0.28, 32, 1, true), straw, this.head, 0, 0.3, 0.1);
+      hat.rotation.x = -0.12;
+      const rim = M(new THREE.TorusGeometry(0.42, 0.012, 6, 40), straw, this.head, 0, 0.165, 0.117);
+      rim.rotation.x = Math.PI / 2 - 0.12;
+      const strap = M(new THREE.TorusGeometry(0.22, 0.01, 6, 24, Math.PI), accMat, this.head, 0, 0.16, 0.12);
       strap.rotation.set(0, Math.PI / 2, Math.PI);
     } else if (L.acc === 'flowers') {
       const center = mat(0xf2c83a);
-      const n = 7;
+      const n = 8;
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
-        const x = Math.cos(a) * 0.2, z = 0.05 + Math.sin(a) * 0.17;
-        const fl = M(new THREE.SphereGeometry(0.055, 8, 6), accMat, this.head, x, 0.27, z);
-        fl.scale.y = 0.55;
-        M(new THREE.SphereGeometry(0.022, 6, 5), center, this.head, x, 0.3, z);
+        const x = Math.cos(a) * 0.17, z = 0.06 + Math.sin(a) * 0.14;
+        const fl = M(new THREE.SphereGeometry(0.05, 10, 8), accMat, this.head, x, 0.13, z);
+        fl.scale.y = 0.5;
+        M(new THREE.SphereGeometry(0.02, 8, 6), center, this.head, x, 0.155, z);
       }
     }
   }
@@ -366,7 +610,6 @@ export class Cow {
     this.scene.remove(this.root);
     this.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
     for (const m of this.materials) m.dispose();
-    this.spotTex.dispose();
   }
 
   startGraze(seconds = 4) { this.grazeTimer = seconds; }
@@ -374,8 +617,8 @@ export class Cow {
 
   animate(dt, running) {
     this.time += dt;
-    const sp = this.speed;
-    const moving = sp > 0.05;
+    const sp = this.speed / Math.max(0.5, this.size); // small calves take quicker steps
+    const moving = this.speed > 0.05;
     const freq = 1.35 + sp * 0.32;
     this.phase += dt * freq * (moving ? 1 : 0) * Math.PI * 2 * Math.min(1, sp / 1.2 + 0.25);
     const amp = Math.min(0.62, sp * 0.2) * (running ? 1.15 : 1);
@@ -392,7 +635,7 @@ export class Cow {
       L.hip.rotation.x = s * amp * (1 - airK) + tuckHip * airK;
       L.knee.rotation.x = (L.front ? lift : lift * 0.7) * (1 - airK) + tuckKnee * airK;
       // foot plant event (when leg passes back through the stance start)
-      if (moving && airK < 0.1 && L.lastS > 0 && s <= 0 && this.onStep) this.onStep(sp);
+      if (moving && airK < 0.1 && L.lastS > 0 && s <= 0 && this.onStep) this.onStep(this.speed);
       L.lastS = s;
     }
 
@@ -423,8 +666,8 @@ export class Cow {
     this.graze += (grazeTarget - this.graze) * Math.min(1, dt * 2.5);
     const chew = this.graze > 0.8 ? Math.sin(this.time * 9) * 0.04 : 0;
     const headBob = moving ? Math.sin(this.phase * 2) * 0.04 : Math.sin(this.time * 0.6) * 0.03;
-    this.neck.rotation.x = 0.1 + this.graze * 1.05 + headBob + windup * 0.55 + thrust * 0.75 - airK * 0.15;
-    this.head.rotation.x = -0.05 + this.graze * 0.35 + chew + thrust * 0.35;
+    this.neck.rotation.x = 0.05 + this.graze * 1.15 + headBob + windup * 0.55 + thrust * 0.75 - airK * 0.15;
+    this.head.rotation.x = -0.05 + this.graze * 0.3 + chew + thrust * 0.35;
     this.head.rotation.y = moving ? 0 : Math.sin(this.time * 0.35) * 0.25 * (1 - this.graze);
 
     // ears twitch
@@ -440,8 +683,8 @@ export class Cow {
     this.tailSwish = Math.max(0, this.tailSwish - dt * 0.8);
     for (let i = 0; i < this.tail.length; i++) {
       const k = i / this.tail.length;
-      this.tail[i].rotation.z = Math.sin(this.time * 2.2 - i * 0.5) * (0.05 + this.tailSwish * 0.35) * (0.5 + k);
-      this.tail[i].rotation.x = (i === 0 ? 0.12 : 0.015) + (moving ? Math.sin(this.phase - i * 0.4) * 0.05 : 0);
+      this.tail[i].rotation.z = Math.sin(this.time * 2.2 - i * 0.5) * (0.05 + this.tailSwish * 0.3) * (0.5 + k);
+      this.tail[i].rotation.x = (i === 0 ? 0.1 : 0.012) + (moving ? Math.sin(this.phase - i * 0.4) * 0.04 : 0);
     }
   }
 }

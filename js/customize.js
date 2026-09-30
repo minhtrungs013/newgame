@@ -115,12 +115,12 @@ export class Customizer {
     colors(row('Màu mõm'), 'snout');
     chips(row('Sừng'), 'horns', HORN_LABELS);
 
-    const sizeBody = row('Kích thước');
+    const sizeBody = row('Cỡ khi lớn');
     const range = el('input', 'cz-range');
     Object.assign(range, { type: 'range', min: '0.85', max: '1.2', step: '0.01' });
     const sizeText = el('span', 'cz-size-text');
     range.addEventListener('input', () => this.set({ size: parseFloat(range.value) }));
-    sizeBody.append(el('span', 'cz-hint', 'Bê con'), range, el('span', 'cz-hint', 'Bò mộng'), sizeText);
+    sizeBody.append(el('span', 'cz-hint', 'Nhỏ'), range, el('span', 'cz-hint', 'Bò mộng'), sizeText);
     this.controls.size = { type: 'range', range, sizeText };
 
     chips(row('Phụ kiện'), 'acc', ACC_LABELS);
@@ -183,6 +183,16 @@ export class Customizer {
     canvas.addEventListener('pointerup', stop);
     canvas.addEventListener('pointercancel', stop);
 
+    // preview as calf / adult
+    this.previewAge = 1;
+    for (const b of this.root.querySelectorAll('.cz-age button')) {
+      b.addEventListener('click', () => {
+        this.previewAge = Number(b.dataset.age);
+        for (const o of this.root.querySelectorAll('.cz-age button')) o.classList.toggle('sel', o === b);
+        if (this.cow) { this.cow.setAge(this.previewAge); this._frame(); }
+      });
+    }
+
     this.clock = new THREE.Clock();
     this.alive = true;
     const loop = () => {
@@ -212,15 +222,15 @@ export class Customizer {
 
   // keep the whole cow in view whatever the cow size and the canvas shape
   _frame() {
-    const s = this.look.size;
-    const fit = Math.max(1, 1.15 / (this.camera.aspect || 1)) * s;
+    const s = this.cow ? this.cow.size : this.look.size;
+    const fit = Math.max(0.9, 1.05 / (this.camera.aspect || 1)) * s;
     this.camera.position.set(3.4 * fit, 1.2 * s + 1.0 * fit, 4.6 * fit);
     this.camera.lookAt(0, 0.95 * s, 0);
   }
 
   _rebuildCow() {
     if (this.cow) this.cow.dispose();
-    this.cow = new Cow(this.scene, { look: this.look, seed: this.seed });
+    this.cow = new Cow(this.scene, { look: this.look, seed: this.seed, age: this.previewAge ?? 1 });
     this._frame();
   }
 

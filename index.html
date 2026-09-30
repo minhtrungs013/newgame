@@ -23,7 +23,7 @@
         <option value="ultra">Ultra</option>
       </select>
     </label>
-    <label class="pill">
+    <label class="pill env-pill">
       <span>Weather</span>
       <select id="sel-weather">
         <option value="clear">Clear</option>
@@ -32,7 +32,7 @@
         <option value="fog">Fog</option>
       </select>
     </label>
-    <label class="pill">
+    <label class="pill env-pill">
       <span>Time</span>
       <select id="sel-time">
         <option value="morning" selected>Morning</option>
@@ -63,6 +63,7 @@
     <div class="status-name" id="txt-name">Bò Mimi</div>
     <div class="status-row"><span>Vui vẻ</span><div class="bar"><i id="bar-happy"></i></div></div>
     <div class="status-row"><span>No bụng</span><div class="bar"><i id="bar-food"></i></div></div>
+    <div class="status-row"><span id="txt-stage">Bê con</span><div class="bar"><i id="bar-grow"></i></div></div>
     <div class="status-row small"><span>Quãng đường</span><b id="txt-dist">0 m</b></div>
     <div class="status-row small"><span><i id="net-dot" class="dot"></i><span id="net-text">Offline</span></span><b id="txt-online">1 người</b></div>
   </div>
@@ -83,7 +84,8 @@
     <b>Shift</b> — Run
     <b>Space</b> — Jump
     <b>F</b> — Headbutt
-    <b>E</b> — Moo / graze
+    <b>E (giữ)</b> — Gặm cỏ
+    <b>Q</b> — Moo
     <b>Mouse</b> — Camera
     <b>Wheel</b> — Zoom
     <b>C</b> — Cinematic
@@ -104,7 +106,11 @@
       <div id="customizer">
         <div class="cz-stage">
           <canvas class="cz-preview"></canvas>
-          <small class="cz-tip">Kéo để xoay</small>
+          <div class="cz-age">
+            <button type="button" data-age="0">Bê con</button>
+            <button type="button" data-age="1" class="sel">Trưởng thành</button>
+          </div>
+          <small class="cz-tip">Kéo để xoay · Bắt đầu là bê con, gặm cỏ để lớn</small>
         </div>
         <div class="cz-side">
           <input id="inp-name" type="text" maxlength="16" placeholder="Tên con bò của bạn" autocomplete="off" />

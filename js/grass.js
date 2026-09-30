@@ -60,7 +60,7 @@ void main() {
   fade *= obstacleMask(wp);
 
   float t = position.y;
-  float hgt = 0.78 * aParams.y * (0.55 + 0.75 * patchN) * fade;
+  float hgt = 0.62 * aParams.y * (0.55 + 0.75 * patchN) * fade;
   float wid = 0.075 * aParams.z * (1.0 - t * 0.9);
 
   float a = aParams.x;

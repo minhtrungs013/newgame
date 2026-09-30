@@ -54,10 +54,10 @@ class Remote {
   constructor(scene, tags, p) {
     this.id = p.id;
     this.name = p.name;
-    this.cow = new Cow(scene, { look: p.look, coat: p.coat, seed: p.id * 7 + 3 });
+    this.cow = new Cow(scene, { look: p.look, coat: p.coat, seed: p.id * 7 + 3, age: p.a ?? 1 });
     this.cow.pos.set(p.x, heightAt(p.x, p.z), p.z);
     this.cow.heading = p.h;
-    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0 };
+    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1 };
     this.tag = new NameTag(tags, p.name);
     this.labelPos = new THREE.Vector3();
   }
@@ -74,6 +74,8 @@ class Remote {
     c.heading += angleDiff(c.heading, t.h) * Math.min(1, dt * 10);
     c.speed += (t.sp - c.speed) * Math.min(1, dt * 8);
     c.grazeTimer = t.g > 0.5 ? 0.5 : 0;
+    // grow / shrink smoothly towards the age the owner reports
+    if (Math.abs(t.a - c.age) > 0.001) c.setAge(c.age + (t.a - c.age) * Math.min(1, dt * 3));
     c.updatePhysics(dt); // jump arcs are simulated locally from 'act' events
 
     const hx = Math.sin(c.heading), hz = Math.cos(c.heading);
@@ -176,9 +178,9 @@ export class Net {
         break;
       }
       case 'snap':
-        for (const [id, x, z, h, sp, g] of m.ps) {
+        for (const [id, x, z, h, sp, g, a] of m.ps) {
           const r = this.remotes.get(id);
-          if (r) Object.assign(r.target, { x, z, h, sp, g });
+          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a });
         }
         break;
       case 'moo': {
@@ -202,7 +204,7 @@ export class Net {
       case 'hit': {
         // we got headbutted
         const r = this.remotes.get(m.from);
-        this.h.onHit(r || null, m.dx, m.dz);
+        this.h.onHit(r || null, m.dx, m.dz, m.age, m.p ?? 1);
         break;
       }
       case 'hitfx': {
@@ -227,9 +229,9 @@ export class Net {
       t: 's',
       x: +cow.pos.x.toFixed(2), z: +cow.pos.z.toFixed(2),
       h: +(((cow.heading % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)).toFixed(3),
-      sp: +cow.speed.toFixed(2), g: cow.graze > 0.5 ? 1 : 0,
+      sp: +cow.speed.toFixed(2), g: cow.graze > 0.5 ? 1 : 0, a: +cow.age.toFixed(3),
     };
-    const key = `${msg.x},${msg.z},${msg.h},${msg.sp},${msg.g}`;
+    const key = `${msg.x},${msg.z},${msg.h},${msg.sp},${msg.g},${msg.a}`;
     if (key === this.lastSent) return;
     this.lastSent = key;
     this.send(msg);

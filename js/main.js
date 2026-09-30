@@ -12,6 +12,13 @@ import { MAX_COWS } from './grass.js';
 import { WEATHERS } from './environment.js';
 
 const $ = (id) => document.getElementById(id);
+
+// Growing up: every cow starts as a calf (age 0) and grows to adult (age 1) by grazing.
+// Server (server.js) enforces the same max growth rate and applies the headbutt shrink.
+const GROW_PER_SEC = 1 / 150;    // ~2.5 min of grazing from calf to adult
+const STARVE_SHRINK = 1 / 400;   // per second while starving
+const STAGES = [[0, 'Bê con'], [0.34, 'Bò tơ'], [0.75, 'Bò trưởng thành']];
+const stageOf = (a) => STAGES.reduce((cur, st) => (a >= st[0] ? st : cur), STAGES[0])[1];
 const dpr = window.devicePixelRatio || 1;
 const QUALITY = {
   low:    { blades: 45000,  patch: 64,  segs: 3, pr: Math.min(dpr, 1) * 0.75, shadows: false, shadowMap: 1024, flowers: 700,  rain: 1500 },
@@ -130,6 +137,9 @@ const state = {
   keys: new Set(),
   time: 0,
   happy: 0.6, food: 0.5, distance: 0,
+  age: 0,              // 0 calf .. 1 adult
+  stage: 'Bê con',
+  starvingWarned: false,
   lightningTimer: 12,
   chewTimer: 0,
   shake: 0,            // camera shake amount
@@ -156,6 +166,13 @@ function applyQuality(name) {
 
 // ---------- input ----------
 addEventListener('keydown', (e) => {
+  // Ctrl+K: show/hide the hidden weather & time controls
+  if (e.ctrlKey && e.code === 'KeyK') {
+    e.preventDefault();
+    const on = document.body.classList.toggle('show-env');
+    toast(on ? 'Đã mở chỉnh thời tiết & thời gian (Ctrl+K để ẩn)' : 'Đã ẩn chỉnh thời tiết & thời gian');
+    return;
+  }
   if (e.target.tagName === 'INPUT') return;
   if (e.target.tagName === 'SELECT') e.target.blur();
   const k = e.code;
@@ -168,13 +185,13 @@ addEventListener('keydown', (e) => {
     net.send({ t: 'act', a: 'jump' });
   }
   if (k === 'KeyF' && state.started) tryButt();
-  if (k === 'KeyE' && state.started) {
+  if (k === 'KeyQ' && state.started) {
     audio.moo();
     selfTag.say('Mooo~', 2);
     net.send({ t: 'moo' });
-    if (cow.speed < 0.6) cow.startGraze(4 + Math.random() * 2);
     state.happy = Math.min(1, state.happy + 0.03);
   }
+  if (k === 'KeyE' && state.started && cow.speed < 0.6) cow.startGraze(1.5);
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
     document.body.classList.toggle('cinematic', state.cinematic);
@@ -242,7 +259,9 @@ $('btn-start').addEventListener('click', () => {
   customizer.dispose();
   // rebuild the local cow with the chosen look
   const old = cow;
-  cow = new Cow(scene, { look, seed });
+  cow = new Cow(scene, { look, seed, age: 0 });
+  state.age = 0;
+  state.stage = stageOf(0);
   cow.onStep = onStep;
   cow.onLand = onLand;
   cow.pos.copy(old.pos); cow.heading = old.heading;
@@ -396,9 +415,10 @@ const net = new Net(scene, $('tags'), {
       if (r.cow.startButt()) audio.whoosh(vol);
     }
   },
-  onHit(r, dx, dz) {
-    // we got headbutted: fly back, hop, get dizzy for a moment
-    cow.knockback(dx, dz);
+  onHit(r, dx, dz, age, power) {
+    // we got headbutted: fly back, hop, get dizzy for a moment, and shrink a bit
+    cow.knockback(dx, dz, power);
+    if (typeof age === 'number') setAge(Math.min(state.age, age));
     audio.bonk(1);
     selfTag.say('Úi! 💥', 1.5);
     state.shake = 0.45;
@@ -468,7 +488,7 @@ function checkButtHit() {
   for (const r of net.remotes.values()) {
     const dx = r.cow.pos.x - cow.pos.x, dz = r.cow.pos.z - cow.pos.z;
     const d = Math.hypot(dx, dz);
-    if (d > 2.8 || d < 0.01) continue;
+    if (d > 1.4 * (cow.size + r.cow.size) || d < 0.01) continue;
     if ((dx * fx + dz * fz) / d < 0.45) continue; // must be in front of us
     if (Math.abs(r.cow.air - cow.air) > 1.2) continue;
     if (d < bestD) { best = r; bestD = d; }
@@ -495,6 +515,19 @@ function checkButtHit() {
     cow.knockback(-fx, -fz, 0.45);
     selfTag.say('Ui da…', 1.2);
     return;
+  }
+}
+
+function setAge(a) {
+  a = Math.min(1, Math.max(0, a));
+  if (Math.abs(a - state.age) < 1e-6) return;
+  const grew = a > state.age;
+  state.age = a;
+  cow.setAge(a);
+  const st = stageOf(a);
+  if (st !== state.stage) {
+    toast(grew ? `🎉 ${$('txt-name').textContent} đã lớn thành ${st}!` : `Bò đã nhỏ lại thành ${st}…`);
+    state.stage = st;
   }
 }
 
@@ -571,13 +604,20 @@ function updateCow(dt) {
   cow.root.rotation.x += (-pitch - cow.root.rotation.x) * Math.min(1, dt * 6);
   cow.animate(dt, running);
 
-  // needs
+  // needs: hold E to keep grazing while standing still
+  if (canControl && k.has('KeyE') && cow.speed < 0.6) cow.grazeTimer = Math.max(cow.grazeTimer, 0.3);
   if (cow.graze > 0.8) {
     state.food = Math.min(1, state.food + dt * 0.06);
+    if (state.food > 0.25) setAge(state.age + GROW_PER_SEC * dt); // eating grass makes the cow grow
     state.chewTimer -= dt;
     if (state.chewTimer < 0) { state.chewTimer = 0.32 + Math.random() * 0.1; audio.chew(); }
   }
   state.food = Math.max(0, state.food - dt * (0.004 + cow.speed * 0.0015));
+  // starving: the cow slowly gets thinner / smaller
+  if (state.started && state.food <= 0.02) {
+    setAge(state.age - STARVE_SHRINK * dt);
+    if (!state.starvingWarned) { state.starvingWarned = true; toast('Bò đói quá, đang gầy đi… Giữ E để gặm cỏ!'); }
+  } else if (state.food > 0.2) state.starvingWarned = false;
   const targetHappy = 0.3 + state.food * 0.5 + (cow.speed > 0.5 ? 0.2 : 0.05) - env.weather.rain * 0.05;
   state.happy += (targetHappy - state.happy) * dt * 0.05;
 }
@@ -717,6 +757,8 @@ function updateHud(dt) {
   hudTimer = 0.2;
   $('bar-happy').style.width = `${Math.round(state.happy * 100)}%`;
   $('bar-food').style.width = `${Math.round(state.food * 100)}%`;
+  $('bar-grow').style.width = `${Math.round(state.age * 100)}%`;
+  $('txt-stage').textContent = state.stage;
   const m = state.distance;
   $('txt-online').textContent = `${net.online} người`;
   $('txt-dist').textContent = m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
@@ -786,7 +828,11 @@ env.weather = { ...env.targetWeather };
 
 const clock = new THREE.Clock();
 function frame() {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  tick(Math.min(clock.getDelta(), 0.05));
+  requestAnimationFrame(frame);
+}
+// one simulation + render step (also callable from the console for debugging)
+function tick(dt) {
   state.time += dt;
   updateCow(dt);
   terrain.update(cow.pos.x, cow.pos.z);
@@ -800,7 +846,6 @@ function frame() {
   renderer.render(scene, camera);
   drawMinimap();
   updateHud(dt);
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-window.__game = { state, cow, env, world, grass, net };
+window.__game = { state, cow, env, world, grass, net, customizer, tick };

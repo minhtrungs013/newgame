@@ -62,5 +62,9 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 
 ## Điều khiển
 
-WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E: kêu moo / gặm cỏ · Chuột: xoay camera · Lăn chuột: zoom ·
-Enter: chat · C: chế độ điện ảnh · F3: debug
+WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ · Q: kêu moo · Chuột: xoay camera · Lăn chuột: zoom ·
+Enter: chat · C: chế độ điện ảnh · F3: debug · Ctrl+K: hiện/ẩn chỉnh thời tiết & thời gian
+
+## Lớn lên
+
+Mỗi lần vào game bò là **bê con**. Giữ **E** để gặm cỏ: no bụng tăng và bò lớn dần (Bê con → Bò tơ → Bò trưởng thành), tối đa bằng "Cỡ khi lớn" đã chọn. Để bụng đói thì bò gầy/nhỏ lại, bị húc cũng nhỏ đi. Bò to húc mạnh hơn. Server giới hạn tốc độ lớn và tự trừ kích thước khi bị húc nên không gian lận được.
