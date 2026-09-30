@@ -24,7 +24,6 @@ const HEX = /^#[0-9a-f]{6}$/i;
 const WEATHERS = ['clear', 'cloudy', 'rain', 'fog'];
 // growth: cows start as calves (age 0) and grow up to 1 by grazing (must match js/main.js)
 const MAX_GROW_PER_SEC = (1 / 150) * 1.6; // client grows at 1/150 per second of grazing; allow some slack
-const HIT_SHRINK = 0.08;
 const CALF_SIZE = 0.5;
 const TIMES = { morning: 7.9, noon: 12.5, sunset: 18.35, night: 23.0 };
 
@@ -271,12 +270,9 @@ function handle(p, text) {
       if (d > 4.5) return; // too far apart (allows for some network lag)
       p.lastHit = now;
       const nx = d > 0.01 ? dx / d : Math.sin(p.h), nz = d > 0.01 ? dz / d : Math.cos(p.h);
-      // bigger cows hit harder; getting butted makes you shrink (enforced here)
+      // bigger cows hit harder (knockback only - being butted doesn't shrink you)
       const power = Math.min(1.8, Math.max(0.6, bodySize(p) / bodySize(target)));
-      target.age = Math.max(0, target.age - HIT_SHRINK);
-      target.ageT = now;
-      target.dirty = true;
-      target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3), age: +target.age.toFixed(3), p: +power.toFixed(2) });
+      target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3), p: +power.toFixed(2) });
       const fx = JSON.stringify({ t: 'hitfx', from: p.id, to: target.id });
       for (const o of players.values()) if (o.ready && o !== p && o !== target) o.conn.send(fx);
       break;

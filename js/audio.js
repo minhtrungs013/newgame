@@ -3,6 +3,7 @@ export class AudioSys {
   constructor() {
     this.ctx = null;
     this.enabled = true;
+    this.volume = 1;
     this.birdTimer = 2;
     this.cricketTimer = 1;
   }
@@ -13,7 +14,7 @@ export class AudioSys {
     if (!AC) return;
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
-    this.master.gain.value = this.enabled ? 0.8 : 0;
+    this.master.gain.value = this.enabled ? 0.8 * this.volume : 0;
     const comp = ctx.createDynamicsCompressor();
     this.master.connect(comp).connect(ctx.destination);
 
@@ -59,8 +60,13 @@ export class AudioSys {
   setEnabled(on) {
     this.enabled = on;
     if (!this.ctx) return;
-    this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.1);
+    this.master.gain.setTargetAtTime(on ? 0.8 * this.volume : 0, this.ctx.currentTime, 0.1);
     if (on && this.ctx.state === 'suspended') this.ctx.resume();
+  }
+
+  setVolume(v) {
+    this.volume = Math.min(1, Math.max(0, v));
+    if (this.ctx && this.enabled) this.master.gain.setTargetAtTime(0.8 * this.volume, this.ctx.currentTime, 0.05);
   }
 
   update(dt, env, time) {

@@ -93,6 +93,61 @@
     <b>C</b> — Cinematic
     <b>Enter</b> — Chat
     <b>F3</b> — Debug
+    <b>Esc</b> — Cài đặt
+  </div>
+
+  <!-- Settings menu (Esc) -->
+  <div id="menu" class="hidden">
+    <div class="menu-card" role="dialog" aria-label="Cài đặt">
+      <div class="menu-head">
+        <h2>Cài đặt</h2>
+        <small>Game nhiều người chơi vẫn tiếp diễn khi mở cài đặt</small>
+      </div>
+      <div class="menu-grid">
+        <section>
+          <h3>Đồ hoạ</h3>
+          <label class="m-row"><span>Chất lượng</span>
+            <select id="m-quality">
+              <option value="low">Thấp</option>
+              <option value="medium">Trung bình</option>
+              <option value="high">Cao</option>
+              <option value="ultra">Rất cao</option>
+            </select>
+          </label>
+          <label class="m-row"><span>Góc nhìn (FOV)</span><input id="m-fov" type="range" min="45" max="80" step="1" /><b id="m-fov-v"></b></label>
+          <h3>Âm thanh</h3>
+          <label class="m-row"><span>Bật âm thanh</span><input id="m-sound" type="checkbox" /></label>
+          <label class="m-row"><span>Âm lượng</span><input id="m-volume" type="range" min="0" max="1" step="0.05" /><b id="m-volume-v"></b></label>
+          <h3>Điều khiển</h3>
+          <label class="m-row"><span>Độ nhạy chuột</span><input id="m-sens" type="range" min="0.3" max="2.5" step="0.1" /><b id="m-sens-v"></b></label>
+          <label class="m-row"><span>Đảo trục dọc</span><input id="m-invert" type="checkbox" /></label>
+        </section>
+        <section>
+          <h3>Giao diện</h3>
+          <label class="m-row"><span>Bản đồ nhỏ</span><input id="m-minimap" type="checkbox" /></label>
+          <label class="m-row"><span>Bảng trạng thái</span><input id="m-status" type="checkbox" /></label>
+          <label class="m-row"><span>Hướng dẫn phím</span><input id="m-help" type="checkbox" /></label>
+          <label class="m-row"><span>Tên người chơi</span><input id="m-tags" type="checkbox" /></label>
+          <h3>Phím điều khiển</h3>
+          <div class="m-keys">
+            <kbd>W A S D</kbd><span>Di chuyển</span>
+            <kbd>Shift</kbd><span>Chạy</span>
+            <kbd>Space</kbd><span>Nhảy</span>
+            <kbd>F</kbd><span>Húc</span>
+            <kbd>E (giữ)</kbd><span>Gặm cỏ / uống nước</span>
+            <kbd>Q</kbd><span>Kêu moo</span>
+            <kbd>Z</kbd><span>Nằm / đứng dậy</span>
+            <kbd>Enter</kbd><span>Chat</span>
+            <kbd>C</kbd><span>Chế độ điện ảnh</span>
+            <kbd>Esc</kbd><span>Mở / đóng cài đặt</span>
+          </div>
+        </section>
+      </div>
+      <div class="menu-actions">
+        <button id="m-invite" type="button" class="m-secondary">Mời bạn</button>
+        <button id="m-resume" type="button">Tiếp tục chơi</button>
+      </div>
+    </div>
   </div>
 
   <!-- Admin announcement banner (/ONADMIN ... / /OFFADMIN) -->

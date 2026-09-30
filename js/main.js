@@ -15,7 +15,7 @@ import { WEATHERS } from './environment.js';
 const $ = (id) => document.getElementById(id);
 
 // Growing up: every cow starts as a calf (age 0) and grows to adult (age 1) by grazing.
-// Server (server.js) enforces the same max growth rate and applies the headbutt shrink.
+// Only hunger and thirst make it shrink again. Server (server.js) enforces the max growth rate.
 const GROW_PER_SEC = 1 / 150;    // ~2.5 min of grazing from calf to adult
 const STARVE_SHRINK = 1 / 400;   // per second while starving
 const STAGES = [[0, 'Bê con'], [0.34, 'Bò tơ'], [0.75, 'Bò trưởng thành']];
@@ -184,6 +184,13 @@ addEventListener('keydown', (e) => {
     toast(on ? 'Đã mở chỉnh thời tiết & thời gian (Ctrl+K để ẩn)' : 'Đã ẩn chỉnh thời tiết & thời gian');
     return;
   }
+  if (e.code === 'Escape' && state.started) {
+    e.preventDefault();
+    if (!$('invite').classList.contains('hidden')) $('invite').classList.add('hidden');
+    else toggleMenu();
+    return;
+  }
+  if (menuOpen) return;
   if (e.target.tagName === 'INPUT') return;
   if (e.target.tagName === 'SELECT') e.target.blur();
   const k = e.code;
@@ -226,8 +233,8 @@ canvas.addEventListener('pointermove', (e) => {
   if (!dragging) return;
   const dx = e.clientX - lastX, dy = e.clientY - lastY;
   lastX = e.clientX; lastY = e.clientY;
-  state.yaw -= dx * 0.005;
-  state.pitch = THREE.MathUtils.clamp(state.pitch + dy * 0.004, -0.05, 1.35);
+  state.yaw -= dx * 0.005 * settings.sens;
+  state.pitch = THREE.MathUtils.clamp(state.pitch + dy * 0.004 * settings.sens * (settings.invert ? -1 : 1), -0.05, 1.35);
   state.lastDrag = state.time;
 });
 const endDrag = () => { dragging = false; canvas.classList.remove('dragging'); };
@@ -240,7 +247,7 @@ canvas.addEventListener('wheel', (e) => {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---------- UI ----------
-$('sel-quality').addEventListener('change', (e) => { applyQuality(e.target.value); e.target.blur(); });
+$('sel-quality').addEventListener('change', (e) => { setSetting('quality', e.target.value); e.target.blur(); });
 // weather/time are shared: when online the server decides and tells everyone
 $('sel-weather').addEventListener('change', (e) => {
   if (net.connected) net.send({ t: 'env', weather: e.target.value });
@@ -252,12 +259,68 @@ $('sel-time').addEventListener('change', (e) => {
   else env.setTime(e.target.value);
   e.target.blur();
 });
-$('btn-sound').addEventListener('click', (e) => {
-  audio.setEnabled(!audio.enabled);
-  e.target.textContent = audio.enabled ? 'On' : 'Off';
-  e.target.classList.toggle('off', !audio.enabled);
-  e.target.blur();
-});
+$('btn-sound').addEventListener('click', (e) => { setSetting('sound', !settings.sound); e.target.blur(); });
+
+// ---------- settings (Esc menu), saved per browser ----------
+const settings = {
+  quality: 'medium', fov: 55, sound: true, volume: 0.8, sens: 1, invert: false,
+  minimap: true, status: true, help: true, tags: true,
+};
+try { Object.assign(settings, JSON.parse(localStorage.getItem('cow.settings') || '{}')); } catch {}
+if (!QUALITY[settings.quality]) settings.quality = 'medium';
+
+// apply one setting (or all of them with key = null) to the game and the menu controls
+function applySettings(key = null) {
+  const all = key === null;
+  if (all || key === 'quality') {
+    if (state.quality !== settings.quality || all) applyQuality(settings.quality);
+    $('sel-quality').value = settings.quality;
+    $('m-quality').value = settings.quality;
+  }
+  if (all || key === 'fov') {
+    camera.fov = settings.fov; camera.updateProjectionMatrix();
+    $('m-fov').value = settings.fov; $('m-fov-v').textContent = `${settings.fov}°`;
+  }
+  if (all || key === 'sound') {
+    audio.setEnabled(settings.sound);
+    $('btn-sound').textContent = settings.sound ? 'On' : 'Off';
+    $('btn-sound').classList.toggle('off', !settings.sound);
+    $('m-sound').checked = settings.sound;
+  }
+  if (all || key === 'volume') {
+    audio.setVolume(settings.volume);
+    $('m-volume').value = settings.volume; $('m-volume-v').textContent = `${Math.round(settings.volume * 100)}%`;
+  }
+  if (all || key === 'sens') { $('m-sens').value = settings.sens; $('m-sens-v').textContent = `${settings.sens.toFixed(1)}×`; }
+  if (all || key === 'invert') $('m-invert').checked = settings.invert;
+  for (const k of ['minimap', 'status', 'help', 'tags']) {
+    if (all || key === k) { document.body.classList.toggle(`hide-${k}`, !settings[k]); $(`m-${k}`).checked = settings[k]; }
+  }
+}
+function setSetting(key, value) {
+  settings[key] = value;
+  try { localStorage.setItem('cow.settings', JSON.stringify(settings)); } catch {}
+  applySettings(key);
+}
+$('m-quality').addEventListener('change', (e) => setSetting('quality', e.target.value));
+$('m-fov').addEventListener('input', (e) => setSetting('fov', Number(e.target.value)));
+$('m-sound').addEventListener('change', (e) => setSetting('sound', e.target.checked));
+$('m-volume').addEventListener('input', (e) => setSetting('volume', Number(e.target.value)));
+$('m-sens').addEventListener('input', (e) => setSetting('sens', Number(e.target.value)));
+$('m-invert').addEventListener('change', (e) => setSetting('invert', e.target.checked));
+for (const k of ['minimap', 'status', 'help', 'tags']) $(`m-${k}`).addEventListener('change', (e) => setSetting(k, e.target.checked));
+
+let menuOpen = false;
+function toggleMenu(open = !menuOpen) {
+  menuOpen = open;
+  $('menu').classList.toggle('hidden', !open);
+  state.keys.clear(); // don't keep walking with a key that was held when the menu opened
+  if (open) $('m-resume').focus();
+}
+$('m-resume').addEventListener('click', () => toggleMenu(false));
+$('m-invite').addEventListener('click', () => { toggleMenu(false); openInvite(); });
+// clicking the dark backdrop also closes the menu
+$('menu').addEventListener('pointerdown', (e) => { if (e.target === $('menu')) toggleMenu(false); });
 // ---------- start screen ----------
 const customizer = new Customizer($('customizer'));
 try { $('inp-name').value = localStorage.getItem('cow.name') || ''; } catch {}
@@ -444,10 +507,9 @@ const net = new Net(scene, $('tags'), {
       if (r.cow.startButt()) audio.whoosh(vol);
     }
   },
-  onHit(r, dx, dz, age, power) {
-    // we got headbutted: fly back, hop, get dizzy for a moment, and shrink a bit
+  onHit(r, dx, dz, power) {
+    // we got headbutted: fly back, hop, get dizzy for a moment
     cow.knockback(dx, dz, power);
-    if (typeof age === 'number') setAge(Math.min(state.age, age));
     audio.bonk(1);
     selfTag.say('Úi! 💥', 1.5);
     state.shake = 0.45;
@@ -903,7 +965,7 @@ function drawMinimap() {
 }
 
 // ---------- loop ----------
-applyQuality('medium');
+applySettings();
 env.setWeather($('sel-weather').value);
 env.setTime($('sel-time').value);
 env.weather = { ...env.targetWeather };

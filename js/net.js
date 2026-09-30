@@ -208,7 +208,7 @@ export class Net {
       case 'hit': {
         // we got headbutted
         const r = this.remotes.get(m.from);
-        this.h.onHit(r || null, m.dx, m.dz, m.age, m.p ?? 1);
+        this.h.onHit(r || null, m.dx, m.dz, m.p ?? 1);
         break;
       }
       case 'hitfx': {
