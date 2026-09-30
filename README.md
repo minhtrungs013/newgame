@@ -62,7 +62,7 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 
 ## Điều khiển
 
-WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Z: nằm nghỉ · Chuột: xoay camera · Lăn chuột: zoom ·
+WASD/mũi tên: đi (S = lùi) · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Z: nằm nghỉ · Chuột: xoay camera · Lăn chuột: zoom ·
 Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · Ctrl+K: hiện/ẩn chỉnh thời tiết & thời gian
 
 ## Bản đồ
@@ -119,6 +119,8 @@ Nhấn **G** (hoặc Esc → tab **Clan**) để quản lý clan — cần đăn
 - **Trong clan**: danh sách thành viên (level, online), 👑 trưởng / ⭐ phó / thành viên. Trưởng: phong/hạ phó, kick, chuyển quyền, sửa cài đặt, giải tán. Phó: duyệt đơn, kick thành viên. Trưởng rời clan thì quyền tự chuyển cho phó (hoặc người vào lâu nhất). Tối đa 20 người.
 - **Đồng đội**: cùng clan húc nhau không có tác dụng. Khác clan hoặc không có clan thì mỗi cú húc mất ~7–22% máu (bò to húc đau hơn) — hết máu là chết. Server tính sát thương và giới hạn tốc độ hồi máu.
 - Tên hiện tag clan có màu (**[TAG] Tên · Lv**), đồng đội hiện màu clan trên minimap. Chat riêng clan: `/c <tin nhắn>`.
+- **Đối thủ** (khác clan / không clan) hiện **tên màu đỏ kèm thanh máu** trên đầu.
+- **Bấm chuột vào con bò** ở gần (dưới 10 m) để xem thông tin: level, clan, tài khoản hay khách, khoảng cách, máu — trưởng/phó clan có nút **Mời vào clan** (người được mời bấm Đồng ý / Từ chối, lời mời hết hạn sau 1 phút).
 
 ## Thông báo admin
 

@@ -209,7 +209,31 @@ function createClans({ store, userKey, levelOf, onlineUsers, notify }) {
     });
   }
 
-  return { handle, getClan, pub, MAX_MEMBERS };
+  async function roleOf(username, clanId) {
+    const c = await getClan(clanId);
+    const m = c && memberOf(c, username);
+    return m ? m.role : null;
+  }
+
+  // an invited player accepted: join even if the clan is invite-only
+  function acceptInvite(username, clanId) {
+    return locked(async () => {
+      const user = await store.get(userKey(username));
+      if (!user) return { error: 'Tài khoản không tồn tại.' };
+      if (user.clanId) return { error: 'Bạn đang ở trong một clan rồi.' };
+      const c = await getClan(clanId);
+      if (!c) return { error: 'Clan không còn tồn tại.' };
+      if (c.members.length >= MAX_MEMBERS) return { error: 'Clan đã đủ người.' };
+      c.members.push({ u: user.username, role: 'member', joined: Date.now() });
+      c.requests = c.requests.filter((r) => r.u.toLowerCase() !== username.toLowerCase());
+      await saveClan(c);
+      await setUserClan(user.username, c.id);
+      notify(c.members.map((m) => m.u), pub(c), c.id);
+      return { clan: pub(c) };
+    });
+  }
+
+  return { handle, getClan, pub, roleOf, acceptInvite, MAX_MEMBERS };
 }
 
 module.exports = { createClans };

@@ -164,6 +164,32 @@
       <small>Nhấn Enter để chơi lại</small>
     </div>
   </div>
+  <!-- Player card: click a nearby cow -->
+  <div id="pcard" class="ui hidden">
+    <button id="pcard-close" type="button" class="pc-x" aria-label="Đóng">✕</button>
+    <div class="pc-head">
+      <div class="pc-name" id="pc-name"></div>
+      <span class="pc-rel" id="pc-rel"></span>
+    </div>
+    <div class="pc-rows">
+      <div><span>Level</span><b id="pc-level"></b></div>
+      <div><span>Clan</span><b id="pc-clan"></b></div>
+      <div><span>Tài khoản</span><b id="pc-acct"></b></div>
+      <div><span>Khoảng cách</span><b id="pc-dist"></b></div>
+    </div>
+    <div class="pc-hp"><span>Máu</span><div class="bar"><i id="pc-hp"></i></div></div>
+    <button id="pc-invite" type="button">🛡️ Mời vào clan</button>
+    <small id="pc-note"></small>
+  </div>
+
+  <!-- Incoming clan invite -->
+  <div id="cinvite" class="ui hidden">
+    <div id="ci-text"></div>
+    <div class="ci-actions">
+      <button id="ci-yes" type="button">Đồng ý</button>
+      <button id="ci-no" type="button" class="secondary">Từ chối</button>
+    </div>
+  </div>
   <div id="toast" class="ui"></div>
   <div id="prompt" class="ui"></div>
   <pre id="debug" class="ui hidden"></pre>

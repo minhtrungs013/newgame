@@ -21,7 +21,11 @@ export class NameTag {
     this.label = document.createElement('div');
     this.label.className = 'name';
     this.label.textContent = name;
-    this.el.append(this.bubble, this.label);
+    this.hp = document.createElement('div');
+    this.hp.className = 'hpbar';
+    this.hpFill = document.createElement('i');
+    this.hp.append(this.hpFill);
+    this.el.append(this.bubble, this.label, this.hp);
     container.appendChild(this.el);
     this.bubbleTimer = 0;
   }
@@ -36,6 +40,19 @@ export class NameTag {
       this.label.append(t, ' ');
     }
     this.label.append(level == null ? name : `${name} · Lv${level}`);
+  }
+  // not in my clan: red name + visible health bar
+  setEnemy(enemy) {
+    if (enemy === this.enemy) return;
+    this.enemy = enemy;
+    this.el.classList.toggle('enemy', enemy);
+  }
+  setHealth(hp) {
+    const v = Math.max(0, Math.min(1, hp ?? 1));
+    if (v === this._hp) return;
+    this._hp = v;
+    this.hpFill.style.width = `${Math.round(v * 100)}%`;
+    this.hpFill.style.background = v > 0.5 ? '#6fd35a' : v > 0.25 ? '#e8c33a' : '#e8483a';
   }
   say(text, seconds = 5) {
     this.bubble.textContent = text;
@@ -69,7 +86,9 @@ class Remote {
     this.cow = new Cow(scene, { look: p.look, coat: p.coat, seed: p.id * 7 + 3, age: p.a ?? 1 });
     this.cow.pos.set(p.x, heightAt(p.x, p.z), p.z);
     this.cow.heading = p.h;
-    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1, l: p.l || 0 };
+    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1, l: p.l || 0, hp: p.hp ?? 1 };
+    this.acct = !!p.acct; // logged-in account (only those can join clans)
+    this.cow.root.userData.remoteId = p.id; // for clicking on the cow
     this.cow.lying = !!p.l;
     if (p.l) this.cow.lie = 1;
     this.tag = new NameTag(tags, p.name);
@@ -77,8 +96,10 @@ class Remote {
     this.clan = p.clan || null; // { id, tag, color, name } - same clan = teammate
     this.labelPos = new THREE.Vector3();
   }
-  update(dt, camera) {
+  update(dt, camera, myClanId = null) {
     const c = this.cow, t = this.target;
+    this.tag.setEnemy(!(myClanId && this.clan && this.clan.id === myClanId));
+    this.tag.setHealth(t.hp);
     const dx = t.x - c.pos.x, dz = t.z - c.pos.z;
     if (dx * dx + dz * dz > 400) { c.pos.x = t.x; c.pos.z = t.z; }
     else {
@@ -201,9 +222,9 @@ export class Net {
         break;
       }
       case 'snap':
-        for (const [id, x, z, h, sp, g, a, l] of m.ps) {
+        for (const [id, x, z, h, sp, g, a, l, hp] of m.ps) {
           const r = this.remotes.get(id);
-          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a, l: l ?? 0 });
+          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a, l: l ?? 0, hp: hp ?? r.target.hp });
         }
         break;
       case 'moo': {
@@ -223,6 +244,9 @@ export class Net {
         if (r) { r.clan = m.clan; r.tag.setLabel(r.name, r.lv, r.clan); }
         break;
       }
+      case 'clan-invite':
+        this.h.onClanInvite(m);
+        break;
       case 'clanupd':
         this.h.onClanUpdate();
         break;
@@ -265,7 +289,7 @@ export class Net {
 
   // stats: { xp, food, water, health } - saved to the account by the server
   update(dt, cow, camera, stats = {}) {
-    for (const r of this.remotes.values()) r.update(dt, camera);
+    for (const r of this.remotes.values()) r.update(dt, camera, this.myClanId);
     if (!this.connected) return;
     this.sendTimer -= dt;
     if (this.sendTimer > 0) return;

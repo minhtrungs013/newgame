@@ -628,10 +628,12 @@ export class Cow {
 
   animate(dt, running) {
     this.time += dt;
-    const sp = this.speed / Math.max(0.5, this.size); // small calves take quicker steps
-    const moving = this.speed > 0.05;
+    // speed < 0 = walking backwards: same gait, legs cycle the other way
+    const dir = this.speed < 0 ? -1 : 1;
+    const sp = Math.abs(this.speed) / Math.max(0.5, this.size); // small calves take quicker steps
+    const moving = Math.abs(this.speed) > 0.05;
     const freq = 1.35 + sp * 0.32;
-    this.phase += dt * freq * (moving ? 1 : 0) * Math.PI * 2 * Math.min(1, sp / 1.2 + 0.25);
+    this.phase += dir * dt * freq * (moving ? 1 : 0) * Math.PI * 2 * Math.min(1, sp / 1.2 + 0.25);
     const amp = Math.min(0.62, sp * 0.2) * (running ? 1.15 : 1);
 
     const airK = smooth(0.02, 0.25, this.air);
@@ -650,7 +652,8 @@ export class Cow {
       L.hip.rotation.x = s * amp * (1 - airK) + tuckHip * airK;
       L.knee.rotation.x = (L.front ? lift : lift * 0.7) * (1 - airK) + tuckKnee * airK;
       // foot plant event (when leg passes back through the stance start)
-      if (moving && airK < 0.1 && L.lastS > 0 && s <= 0 && this.onStep) this.onStep(this.speed);
+      const planted = dir > 0 ? L.lastS > 0 && s <= 0 : L.lastS <= 0 && s > 0;
+      if (moving && airK < 0.1 && planted && this.onStep) this.onStep(Math.abs(this.speed));
       L.lastS = s;
       // lying pose: front legs folded under the chest, hind legs tucked forward & splayed out
       if (lieK > 0) {

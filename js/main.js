@@ -3,6 +3,8 @@ import { Terrain, heightAt, waterAt, pondsNear, fillPondUniforms } from './terra
 import { Water } from './water.js';
 import { Crocs } from './crocs.js';
 import { LEVEL_MAX, XP_MAX, levelInfo, stageName } from './levels.js';
+
+const CARD_RANGE = 10;   // metres: how close you must be to inspect another cow
 import { Grass } from './grass.js';
 import { Cow, BUTT_HIT_AT } from './cow.js';
 import { Sky } from './sky.js';
@@ -230,7 +232,7 @@ addEventListener('keydown', (e) => {
     net.send({ t: 'moo' });
     state.happy = Math.min(1, state.happy + 0.03);
   }
-  if (k === 'KeyE' && state.started && cow.speed < 0.6 && !cow.lying) cow.startGraze(1.5);
+  if (k === 'KeyE' && state.started && Math.abs(cow.speed) < 0.6 && !cow.lying) cow.startGraze(1.5);
   if (k === 'KeyG' && state.started) { toggleMenu(true, 'clan'); return; }
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
@@ -244,9 +246,10 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => state.keys.delete(e.code));
 addEventListener('blur', () => state.keys.clear());
 
-let dragging = false, lastX = 0, lastY = 0;
+let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0, downT = 0;
 canvas.addEventListener('pointerdown', (e) => {
   dragging = true; lastX = e.clientX; lastY = e.clientY;
+  downX = e.clientX; downY = e.clientY; downT = performance.now();
   canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('dragging');
 });
@@ -259,7 +262,11 @@ canvas.addEventListener('pointermove', (e) => {
   state.lastDrag = state.time;
 });
 const endDrag = () => { dragging = false; canvas.classList.remove('dragging'); };
-canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointerup', (e) => {
+  endDrag();
+  const click = Math.hypot(e.clientX - downX, e.clientY - downY) < 6 && performance.now() - downT < 400;
+  if (click && state.started && e.button === 0) pickCow(e.clientX, e.clientY);
+});
 canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -373,6 +380,8 @@ $('menu').addEventListener('pointerdown', (e) => { if (e.target === $('menu')) t
 const account = { token: null, username: null };
 try { account.token = localStorage.getItem('cow.token'); } catch {}
 let accTab = 'login';
+let nameTyped = false;
+$('inp-name').addEventListener('input', () => { nameTyped = true; });
 function accMsg(text, ok = false) { $('acc-msg').textContent = text; $('acc-msg').classList.toggle('ok', ok); }
 function showAccount(profile) {
   const logged = !!profile;
@@ -383,7 +392,8 @@ function showAccount(profile) {
     $('acc-name').textContent = profile.username;
     $('acc-level').textContent = `Lv ${profile.level ?? 0}`;
     if (profile.look) customizer.set(profile.look);
-    if (profile.name) $('inp-name').value = profile.name;
+    // fill in the saved cow name - unless the player already typed one (slow server replies)
+    if (profile.name && !nameTyped) $('inp-name').value = profile.name;
     $('btn-start').textContent = `Tiếp tục chơi (Lv ${profile.level ?? 0})`;
   } else {
     account.username = null;
@@ -429,6 +439,75 @@ $('acc-logout').addEventListener('click', async () => {
   showAccount(null);
   if (token) api('/api/logout', { token }).catch(() => {});
 });
+
+// ---------- player card (click a nearby cow) & clan invites ----------
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let cardRemote = null;
+function pickCow(x, y) {
+  ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const roots = [...net.remotes.values()].map((r) => r.cow.root);
+  const hit = raycaster.intersectObjects(roots, true)[0];
+  if (!hit) { closeCard(); return; }
+  let o = hit.object;
+  while (o && o.userData.remoteId === undefined) o = o.parent;
+  const r = o && net.remotes.get(o.userData.remoteId);
+  if (!r) return;
+  if (r.cow.pos.distanceTo(cow.pos) > CARD_RANGE) { toast(`Lại gần ${r.name} hơn (dưới ${CARD_RANGE} m) để xem thông tin`); return; }
+  cardRemote = r;
+  $('pc-note').textContent = '';
+  $('pcard').classList.remove('hidden');
+  updateCard();
+}
+function closeCard() { cardRemote = null; $('pcard').classList.add('hidden'); }
+function updateCard() {
+  const r = cardRemote;
+  if (!r) return;
+  if (!net.remotes.has(r.id)) { closeCard(); return; }
+  const d = r.cow.pos.distanceTo(cow.pos);
+  if (d > CARD_RANGE * 2) { closeCard(); return; }
+  const mate = !!(state.clan && r.clan && r.clan.id === state.clan.id);
+  const lv = Math.round(r.target.a * LEVEL_MAX);
+  const name = $('pc-name');
+  name.replaceChildren();
+  if (r.clan) { const t = document.createElement('span'); t.className = 'clan-tag'; t.textContent = `[${r.clan.tag}] `; t.style.color = r.clan.color; name.append(t); }
+  name.append(r.name);
+  name.style.color = mate ? '' : '#ff8a7a';
+  $('pc-rel').textContent = mate ? 'ĐỒNG ĐỘI' : 'ĐỐI THỦ';
+  $('pc-rel').className = `pc-rel ${mate ? 'mate' : 'enemy'}`;
+  $('pc-level').textContent = `Lv ${lv} · ${stageName(lv)}`;
+  $('pc-clan').textContent = r.clan ? `[${r.clan.tag}] ${r.clan.name}` : 'Chưa có';
+  $('pc-acct').textContent = r.acct ? 'Có' : 'Khách';
+  $('pc-dist').textContent = `${d.toFixed(1)} m`;
+  $('pc-hp').style.width = `${Math.round((r.target.hp ?? 1) * 100)}%`;
+  // invite button: only makes sense from a clan member, to a logged-in player without a clan
+  const btnI = $('pc-invite');
+  let why = '';
+  if (!account.token) why = 'Đăng nhập để dùng clan.';
+  else if (!state.clan) why = 'Bạn chưa có clan (nhấn G để tạo).';
+  else if (!r.acct) why = 'Người này chơi khách, không vào clan được.';
+  else if (r.clan) why = mate ? 'Đã là đồng đội.' : 'Người này đã có clan khác.';
+  btnI.disabled = !!why;
+  if (why && !$('pc-note').dataset.sent) $('pc-note').textContent = why;
+}
+$('pcard-close').addEventListener('click', closeCard);
+$('pc-invite').addEventListener('click', () => {
+  if (!cardRemote) return;
+  net.send({ t: 'clan-invite', to: cardRemote.id });
+  $('pc-note').textContent = 'Đã gửi lời mời…';
+});
+
+let pendingInvite = null, inviteTimer = 0;
+function answerInvite(accept) {
+  if (!pendingInvite) return;
+  net.send({ t: 'clan-reply', clanId: pendingInvite.clan.id, accept });
+  pendingInvite = null;
+  clearTimeout(inviteTimer);
+  $('cinvite').classList.add('hidden');
+}
+$('ci-yes').addEventListener('click', () => answerInvite(true));
+$('ci-no').addEventListener('click', () => answerInvite(false));
 
 // ---------- clan manager ----------
 const clanPanel = new ClanPanel({
@@ -610,6 +689,7 @@ const net = new Net(scene, $('tags'), {
   },
   onWelcome(m) {
     state.clan = m.clan || null;
+    net.myClanId = state.clan ? state.clan.id : null;
     showMyName();
     if (m.profile) {
       setXp(m.profile.xp, true);
@@ -625,7 +705,19 @@ const net = new Net(scene, $('tags'), {
       : 'Đã vào đồng cỏ. Gửi địa chỉ server cho bạn bè để chơi chung!', true);
   },
   onSystem(text) { addChat('', text, true); },
+  onClanInvite(m) {
+    if (state.clan) return; // already in a clan
+    pendingInvite = m;
+    $('ci-text').replaceChildren();
+    const t = document.createElement('b'); t.textContent = `[${m.clan.tag}] ${m.clan.name}`; t.style.color = m.clan.color;
+    $('ci-text').append(`🛡️ ${m.from} mời bạn vào clan `, t);
+    $('cinvite').classList.remove('hidden');
+    audio.chime();
+    clearTimeout(inviteTimer);
+    inviteTimer = setTimeout(() => answerInvite(false), 60000); // ignored invites expire after a minute
+  },
   onMyClan(clan) {
+    net.myClanId = clan ? clan.id : null;
     const before = state.clan;
     state.clan = clan;
     showMyName();
@@ -859,15 +951,19 @@ function updateCow(dt) {
   if (state.started && cow.lying && (f || r)) toggleLie();
   const canControl = state.started && !state.dead && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying;
   if (canControl && (f || r)) {
-    // camera-relative movement
+    // camera-relative movement. S = walk backwards: keep facing away from the camera
+    // and step back (instead of turning round); S+A/D backs away diagonally.
+    const back = f < 0;
+    const ff = back ? 1 : f, rr = back ? -r : r;
     const fx = -Math.sin(state.camYaw), fz = -Math.cos(state.camYaw);
     const rx = Math.cos(state.camYaw), rz = -Math.sin(state.camYaw);
-    const dx = fx * f + rx * r, dz = fz * f + rz * r;
+    const dx = fx * ff + rx * rr, dz = fz * ff + rz * rr;
     const want = Math.atan2(dx, dz);
     const diff = angleDiff(cow.heading, want);
     const turnRate = running ? 2.6 : 2.0;
     cow.heading += THREE.MathUtils.clamp(diff, -turnRate * dt, turnRate * dt);
-    targetSpeed = (running ? 5.2 : 1.9) * Math.max(0.25, Math.cos(Math.min(Math.abs(diff), Math.PI / 2)));
+    const pace = back ? (running ? 2.2 : 1.1) : (running ? 5.2 : 1.9);
+    targetSpeed = (back ? -1 : 1) * pace * Math.max(0.25, Math.cos(Math.min(Math.abs(diff), Math.PI / 2)));
     if (cow.isGrazing) cow.grazeTimer = 0;
   }
   // fatigue: a hungry cow runs slower
@@ -918,7 +1014,7 @@ function updateCow(dt) {
     // only block steps that go deeper, so a cow knocked in can still walk back out
     if (!before || wet.depth > before.depth) { cow.pos.x = prevX; cow.pos.z = prevZ; cow.speed *= 0.5; cow.knock.set(0, 0); }
   }
-  state.distance += cow.speed * dt;
+  state.distance += Math.abs(cow.speed) * dt;
 
   // align to ground
   const hx = Math.sin(cow.heading), hz = Math.cos(cow.heading);
@@ -937,7 +1033,7 @@ function updateCow(dt) {
   const wHead = waterAt(cow.pos.x + hx * reach, cow.pos.z + hz * reach);
   const wHere = waterAt(cow.pos.x, cow.pos.z);
   state.canDrink = !!((wHead && wHead.depth > 0.03) || (wHere && wHere.depth > 0.05));
-  if (canControl && k.has('KeyE') && cow.speed < 0.6) cow.grazeTimer = Math.max(cow.grazeTimer, 0.3);
+  if (canControl && k.has('KeyE') && Math.abs(cow.speed) < 0.6) cow.grazeTimer = Math.max(cow.grazeTimer, 0.3);
   state.drinking = state.canDrink && cow.graze > 0.8;
   if (state.drinking) {
     state.water = Math.min(1, state.water + dt * 0.15);
@@ -965,8 +1061,9 @@ function updateCow(dt) {
   }
   const rest = cow.isDown ? 0.4 : 1; // resting cows get hungry / thirsty more slowly
   // full -> empty: food ~13 min standing (~5 min running), water ~10 min (~4 min running)
-  state.food = Math.max(0, state.food - dt * (0.0013 + cow.speed * 0.0005) * rest);
-  state.water = Math.max(0, state.water - dt * (0.0016 + cow.speed * 0.0006) * rest);
+  const effort = Math.abs(cow.speed);
+  state.food = Math.max(0, state.food - dt * (0.0013 + effort * 0.0005) * rest);
+  state.water = Math.max(0, state.water - dt * (0.0016 + effort * 0.0006) * rest);
   // thirsty: shrink too
   if (state.started && state.water <= 0.02) {
     setXp(state.xp - XP_HUNGER * dt);
@@ -984,7 +1081,7 @@ function updateCow(dt) {
     else if (state.food > 0.3 && state.water > 0.3) state.health = Math.min(1, state.health + HEALTH_REGEN * dt);
     if (state.health <= 0) { state.health = 0; killCow(starving && parched ? 'both' : starving ? 'starve' : 'thirst'); }
   }
-  const targetHappy = 0.2 + state.food * 0.35 + state.water * 0.3 + (cow.speed > 0.5 ? 0.15 : cow.isDown ? 0.18 : 0.05) - env.weather.rain * 0.05;
+  const targetHappy = 0.2 + state.food * 0.35 + state.water * 0.3 + (Math.abs(cow.speed) > 0.5 ? 0.15 : cow.isDown ? 0.18 : 0.05) - env.weather.rain * 0.05;
   state.happy += (targetHappy - state.happy) * dt * 0.05;
 }
 
@@ -992,7 +1089,7 @@ function updateCamera(dt) {
   if (state.cinematic) {
     state.yaw += dt * 0.12;
     state.pitch += (0.18 - state.pitch) * dt * 0.5;
-  } else if (cow.speed > 0.4 && state.time - state.lastDrag > 1.8) {
+  } else if (cow.speed > 0.4 && state.time - state.lastDrag > 1.8) { // not while backing up (keeps S+A/D steady)
     // drift behind the cow while walking
     const behind = cow.heading + Math.PI;
     state.yaw += angleDiff(state.yaw, behind) * Math.min(1, dt * 0.6);
@@ -1120,6 +1217,7 @@ function updateEnvironment(dt) {
 // ---------- HUD ----------
 let hudTimer = 0, fpsFrames = 0, fpsTime = 0, fps = 0;
 function updateHud(dt) {
+  if (cardRemote && hudTimer <= dt) updateCard();
   fpsFrames++; fpsTime += dt;
   if (fpsTime > 0.5) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
   hudTimer -= dt;
@@ -1245,4 +1343,4 @@ function tick(dt) {
   updateHud(dt);
 }
 requestAnimationFrame(frame);
-window.__game = { state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn };
+window.__game = { state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn, camera, pickCow };
