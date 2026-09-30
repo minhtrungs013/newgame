@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cow Meadow</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- Top-right settings bar -->
+  <div id="settings" class="ui">
+    <label class="pill">
+      <span>Quality</span>
+      <select id="sel-quality">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="ultra">Ultra</option>
+      </select>
+    </label>
+    <label class="pill">
+      <span>Weather</span>
+      <select id="sel-weather">
+        <option value="clear">Clear</option>
+        <option value="cloudy">Cloudy</option>
+        <option value="rain" selected>Rain</option>
+        <option value="fog">Fog</option>
+      </select>
+    </label>
+    <label class="pill">
+      <span>Time</span>
+      <select id="sel-time">
+        <option value="morning" selected>Morning</option>
+        <option value="noon">Noon</option>
+        <option value="sunset">Sunset</option>
+        <option value="night">Night</option>
+        <option value="cycle">Day cycle</option>
+      </select>
+    </label>
+    <div class="pill">
+      <span>Sound</span>
+      <button id="btn-sound" type="button">On</button>
+    </div>
+    <div class="pill">
+      <button id="btn-invite" type="button">Mời bạn</button>
+    </div>
+  </div>
+
+  <!-- Invite popup -->
+  <div id="invite" class="ui hidden">
+    <div class="invite-title">Mời bạn bè vào đồng cỏ</div>
+    <div id="invite-body"></div>
+    <button id="invite-close" type="button">Đóng</button>
+  </div>
+
+  <!-- Top-left status -->
+  <div id="status" class="ui">
+    <div class="status-name" id="txt-name">Bò Mimi</div>
+    <div class="status-row"><span>Vui vẻ</span><div class="bar"><i id="bar-happy"></i></div></div>
+    <div class="status-row"><span>No bụng</span><div class="bar"><i id="bar-food"></i></div></div>
+    <div class="status-row small"><span>Quãng đường</span><b id="txt-dist">0 m</b></div>
+    <div class="status-row small"><span><i id="net-dot" class="dot"></i><span id="net-text">Offline</span></span><b id="txt-online">1 người</b></div>
+  </div>
+
+  <!-- Minimap -->
+  <canvas id="minimap" class="ui" width="160" height="160"></canvas>
+
+  <!-- Chat -->
+  <div id="chat" class="ui">
+    <div id="chat-log"></div>
+    <input id="chat-input" type="text" maxlength="120" placeholder="Nhập tin nhắn… (Enter gửi, Esc đóng)" autocomplete="off" />
+  </div>
+  <div id="tags"></div>
+
+  <!-- Bottom-left controls help -->
+  <div id="help" class="ui">
+    <b>WASD / Arrow Keys</b> — Move
+    <b>Shift</b> — Run
+    <b>Space</b> — Moo / graze
+    <b>Mouse</b> — Camera
+    <b>Wheel</b> — Zoom
+    <b>C</b> — Cinematic
+    <b>Enter</b> — Chat
+    <b>F3</b> — Debug
+  </div>
+
+  <div id="toast" class="ui"></div>
+  <pre id="debug" class="ui hidden"></pre>
+  <div id="letterbox-top" class="letterbox"></div>
+  <div id="letterbox-bottom" class="letterbox"></div>
+
+  <!-- Start screen -->
+  <div id="start">
+    <div class="start-card">
+      <h1>Cow Meadow</h1>
+      <p>Dắt bò đi dạo trên đồng cỏ bất tận — cùng bạn bè</p>
+      <input id="inp-name" type="text" maxlength="16" placeholder="Tên con bò của bạn" autocomplete="off" />
+      <div id="coat-pick">
+        <button type="button" data-coat="holstein" class="sel" title="Bò sữa"><i style="background:linear-gradient(135deg,#f2efe8 50%,#121212 50%)"></i>Bò sữa</button>
+        <button type="button" data-coat="brown" title="Đốm nâu"><i style="background:linear-gradient(135deg,#f0e8dc 50%,#6b3a1e 50%)"></i>Đốm nâu</button>
+        <button type="button" data-coat="jersey" title="Bò vàng"><i style="background:#b9804a"></i>Bò vàng</button>
+        <button type="button" data-coat="black" title="Bò đen"><i style="background:#1c1b1a"></i>Bò đen</button>
+      </div>
+      <button id="btn-start" type="button">Vào đồng cỏ</button>
+      <small>Bạn bè cùng mạng LAN mở cùng địa chỉ server để chơi chung</small>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

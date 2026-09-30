@@ -1,0 +1,11 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: cow-meadow
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: "echo no build needed"
+    startCommand: node server.js
+    healthCheckPath: /api/info
+    autoDeploy: true

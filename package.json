@@ -1,0 +1,14 @@
+{
+  "name": "cow-meadow",
+  "version": "1.0.0",
+  "description": "3D open-world multiplayer cow walking game",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

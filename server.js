@@ -1,0 +1,264 @@
+// Cow Meadow server: static files + multiplayer over WebSocket (no dependencies).
+//   node server.js           -> http://localhost:5173
+// Friends on the same network join via http://<your-LAN-IP>:5173
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const os = require('os');
+
+const PORT = process.env.PORT || 5173;
+const ROOT = __dirname;
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp' };
+const MAX_PLAYERS = 32;
+const COATS = ['holstein', 'brown', 'jersey', 'black'];
+const WEATHERS = ['clear', 'cloudy', 'rain', 'fog'];
+const TIMES = { morning: 7.9, noon: 12.5, sunset: 18.35, night: 23.0 };
+
+// ---------- public URL (ngrok) ----------
+// When ngrok runs on this machine it exposes a local API listing its tunnels.
+// On Render the public address is provided automatically.
+const FIXED_URL = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || null;
+let publicUrl = FIXED_URL;
+function setPublicUrl(url) {
+  if (url === publicUrl) return;
+  publicUrl = url;
+  if (url) console.log(`\n  INTERNET (ngrok):  ${url}\n  -> Gui link nay cho ban be de choi chung!\n`);
+  else console.log('  ngrok da tat - chi con choi duoc trong LAN.');
+}
+function pollNgrok() {
+  if (FIXED_URL) return;
+  const req = http.get('http://127.0.0.1:4040/api/tunnels', { timeout: 1500 }, (res) => {
+    let body = '';
+    res.on('data', (d) => { body += d; });
+    res.on('end', () => {
+      try {
+        const t = JSON.parse(body).tunnels.find((x) => x.public_url?.startsWith('https://'));
+        setPublicUrl(t ? t.public_url : null);
+      } catch {}
+    });
+  });
+  req.on('error', () => setPublicUrl(null));
+  req.on('timeout', () => req.destroy());
+}
+setInterval(pollNgrok, 3000);
+pollNgrok();
+
+function lanUrls() {
+  const out = [];
+  if (process.env.RENDER) return out; // cloud host: internal IPs are useless to players
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const a of list || []) if (a.family === 'IPv4' && !a.internal) out.push(`http://${a.address}:${PORT}`);
+  }
+  return out;
+}
+
+// ---------- static files ----------
+// Only the game's own files are served (never server.js, .bat, config...), since
+// the server may be reachable from the Internet through ngrok.
+const PUBLIC_FILE = /^\/(index\.html|style\.css|js\/[\w-]+\.js)$/;
+const server = http.createServer((req, res) => {
+  let url;
+  try { url = decodeURIComponent(req.url.split('?')[0]); } catch { res.writeHead(400); return res.end(); }
+  if (url === '/api/info') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({ publicUrl, lan: lanUrls(), players: [...players.values()].filter((p) => p.ready).length }));
+  }
+  if (url === '/') url = '/index.html';
+  if (req.method !== 'GET' || !PUBLIC_FILE.test(url)) { res.writeHead(404); return res.end('Not found'); }
+  const file = path.join(ROOT, url);
+  fs.readFile(file, (err, data) => {
+    if (err) { res.writeHead(404); return res.end('Not found'); }
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.end(data);
+  });
+});
+
+// ---------- minimal WebSocket (RFC 6455) ----------
+function encodeFrame(str, opcode = 0x1) {
+  const payload = Buffer.from(str);
+  const len = payload.length;
+  let header;
+  if (len < 126) { header = Buffer.alloc(2); header[1] = len; }
+  else if (len < 65536) { header = Buffer.alloc(4); header[1] = 126; header.writeUInt16BE(len, 2); }
+  else { header = Buffer.alloc(10); header[1] = 127; header.writeBigUInt64BE(BigInt(len), 2); }
+  header[0] = 0x80 | opcode;
+  return Buffer.concat([header, payload]);
+}
+
+class Conn {
+  constructor(socket, onMessage, onClose) {
+    this.socket = socket;
+    this.buf = Buffer.alloc(0);
+    this.frag = [];
+    this.open = true;
+    this.onMessage = onMessage;
+    this.onClose = onClose;
+    socket.on('data', (d) => this._data(d));
+    socket.on('close', () => this._closed());
+    socket.on('error', () => this._closed());
+  }
+  send(obj) {
+    if (!this.open) return;
+    try { this.socket.write(encodeFrame(typeof obj === 'string' ? obj : JSON.stringify(obj))); } catch { this._closed(); }
+  }
+  close() {
+    if (!this.open) return;
+    try { this.socket.end(encodeFrame('', 0x8)); } catch {}
+    this._closed();
+  }
+  _closed() {
+    if (!this.open) return;
+    this.open = false;
+    this.socket.destroy();
+    this.onClose();
+  }
+  _data(chunk) {
+    this.buf = Buffer.concat([this.buf, chunk]);
+    if (this.buf.length > 1 << 20) return this.close();
+    while (this.buf.length >= 2) {
+      const b0 = this.buf[0], b1 = this.buf[1];
+      const fin = (b0 & 0x80) !== 0, opcode = b0 & 0x0f, masked = (b1 & 0x80) !== 0;
+      let len = b1 & 0x7f, off = 2;
+      if (len === 126) { if (this.buf.length < 4) return; len = this.buf.readUInt16BE(2); off = 4; }
+      else if (len === 127) { if (this.buf.length < 10) return; len = Number(this.buf.readBigUInt64BE(2)); off = 10; }
+      if (len > 65536 || !masked) return this.close();
+      if (this.buf.length < off + 4 + len) return;
+      const mask = this.buf.subarray(off, off + 4);
+      const data = Buffer.from(this.buf.subarray(off + 4, off + 4 + len));
+      for (let i = 0; i < data.length; i++) data[i] ^= mask[i & 3];
+      this.buf = this.buf.subarray(off + 4 + len);
+
+      if (opcode === 0x8) return this.close();
+      if (opcode === 0x9) { try { this.socket.write(Buffer.concat([Buffer.from([0x8a, data.length]), data])); } catch {} continue; }
+      if (opcode === 0xa) continue;
+      if (opcode === 0x1 || opcode === 0x0) {
+        this.frag.push(data);
+        if (fin) {
+          const text = Buffer.concat(this.frag).toString('utf8');
+          this.frag = [];
+          this.onMessage(text);
+        }
+      }
+    }
+  }
+}
+
+// ---------- game state ----------
+const players = new Map(); // id -> player
+let nextId = 1;
+const envState = { weather: 'rain', time: 'morning', cycleBase: TIMES.morning, cycleStart: Date.now() };
+
+function envMsg() {
+  const hour = envState.time === 'cycle'
+    ? (envState.cycleBase + (Date.now() - envState.cycleStart) / 25000) % 24
+    : TIMES[envState.time];
+  return { t: 'env', weather: envState.weather, time: envState.time, hour };
+}
+const num = (v, lo, hi, def = 0) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : def);
+const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
+const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g });
+
+function broadcast(obj, except) {
+  const s = JSON.stringify(obj);
+  for (const p of players.values()) if (p !== except && p.ready) p.conn.send(s);
+}
+
+server.on('upgrade', (req, socket) => {
+  if (req.url !== '/ws' || req.headers.upgrade?.toLowerCase() !== 'websocket') return socket.destroy();
+  const key = req.headers['sec-websocket-key'];
+  if (!key) return socket.destroy();
+  const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+               `Sec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  socket.setNoDelay(true);
+
+  const p = { id: nextId++, name: 'Bò', coat: 'holstein', x: 0, z: 0, h: 0, sp: 0, g: 0, ready: false, dirty: false, lastChat: 0, chatBudget: 5 };
+  p.conn = new Conn(socket, (text) => handle(p, text), () => {
+    if (!players.has(p.id)) return;
+    players.delete(p.id);
+    if (p.ready) {
+      broadcast({ t: 'leave', id: p.id });
+      console.log(`- ${p.name} left (${players.size} online)`);
+    }
+  });
+  if (players.size >= MAX_PLAYERS) { p.conn.send({ t: 'full' }); return p.conn.close(); }
+  players.set(p.id, p);
+});
+
+function handle(p, text) {
+  let m;
+  try { m = JSON.parse(text); } catch { return; }
+  if (!m || typeof m !== 'object') return;
+  switch (m.t) {
+    case 'hello': {
+      if (p.ready) return;
+      p.name = clean(m.name, 16) || `Bò ${p.id}`;
+      p.coat = COATS.includes(m.coat) ? m.coat : 'holstein';
+      const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 6;
+      p.x = Math.cos(a) * r; p.z = Math.sin(a) * r; p.h = Math.random() * Math.PI * 2;
+      p.ready = true;
+      p.conn.send({
+        t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(),
+        players: [...players.values()].filter(o => o.ready && o !== p).map(publicInfo),
+      });
+      broadcast({ t: 'join', p: publicInfo(p) }, p);
+      console.log(`+ ${p.name} joined (${players.size} online)`);
+      break;
+    }
+    case 's': {
+      if (!p.ready) return;
+      p.x = num(m.x, -1e6, 1e6, p.x); p.z = num(m.z, -1e6, 1e6, p.z);
+      p.h = num(m.h, -1e4, 1e4, p.h); p.sp = num(m.sp, 0, 10); p.g = num(m.g, 0, 1);
+      p.dirty = true;
+      break;
+    }
+    case 'moo':
+      if (p.ready) broadcast({ t: 'moo', id: p.id }, p);
+      break;
+    case 'chat': {
+      if (!p.ready) return;
+      const now = Date.now();
+      p.chatBudget = Math.min(5, p.chatBudget + (now - p.lastChat) / 2000);
+      p.lastChat = now;
+      if (p.chatBudget < 1) return;
+      p.chatBudget -= 1;
+      const txt = clean(m.text, 120);
+      if (txt) broadcast({ t: 'chat', id: p.id, name: p.name, text: txt });
+      break;
+    }
+    case 'env': {
+      if (!p.ready) return;
+      if (WEATHERS.includes(m.weather)) envState.weather = m.weather;
+      if (m.time === 'cycle' && envState.time !== 'cycle') {
+        envState.cycleBase = TIMES[envState.time];
+        envState.cycleStart = Date.now();
+        envState.time = 'cycle';
+      } else if (TIMES[m.time] !== undefined) envState.time = m.time;
+      broadcast({ ...envMsg(), by: p.name });
+      break;
+    }
+  }
+}
+
+// position snapshots at 15 Hz, env heartbeat every 10 s
+setInterval(() => {
+  const ps = [];
+  for (const p of players.values()) {
+    if (!p.ready || !p.dirty) continue;
+    p.dirty = false;
+    ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2)]);
+  }
+  if (ps.length) broadcast({ t: 'snap', ps });
+}, 1000 / 15);
+setInterval(() => broadcast(envMsg()), 10000);
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Cow Meadow running at http://localhost:${PORT}`);
+  for (const u of lanUrls()) console.log(`  LAN:  ${u}`);
+});
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') console.error(`Port ${PORT} dang duoc dung - co the server da chay roi.`);
+  else console.error(e);
+  process.exit(1);
+});
