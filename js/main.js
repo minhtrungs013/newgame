@@ -411,6 +411,7 @@ function showPane(pane) {
   for (const b of document.querySelectorAll('.menu-tabs button')) b.classList.toggle('sel', b.dataset.pane === pane);
   $('pane-settings').classList.toggle('hidden', pane !== 'settings');
   $('pane-clan').classList.toggle('hidden', pane !== 'clan');
+  $('pane-controls').classList.toggle('hidden', pane !== 'controls');
   if (pane === 'clan') clanPanel.refresh();
 }
 for (const b of document.querySelectorAll('.menu-tabs button')) b.addEventListener('click', () => showPane(b.dataset.pane));

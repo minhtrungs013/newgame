@@ -100,37 +100,15 @@
       <div class="menu-head">
         <div class="menu-tabs">
           <button type="button" data-pane="settings" class="sel">⚙️ Cài đặt</button>
+          <button type="button" data-pane="controls">🎮 Điều khiển</button>
           <button type="button" data-pane="clan">🛡️ Clan <kbd>G</kbd></button>
         </div>
         <small>Game nhiều người chơi vẫn tiếp diễn khi mở menu</small>
       </div>
       <div id="pane-clan" class="menu-pane hidden"></div>
-      <div id="pane-settings" class="menu-grid menu-pane">
+      <div id="pane-controls" class="menu-grid menu-pane hidden">
         <section>
-          <h3>Đồ hoạ</h3>
-          <label class="m-row"><span>Chất lượng</span>
-            <select id="m-quality">
-              <option value="low">Thấp</option>
-              <option value="medium">Trung bình</option>
-              <option value="high">Cao</option>
-              <option value="ultra">Rất cao</option>
-            </select>
-          </label>
-          <label class="m-row"><span>Góc nhìn (FOV)</span><input id="m-fov" type="range" min="45" max="80" step="1" /><b id="m-fov-v"></b></label>
-          <h3>Âm thanh</h3>
-          <label class="m-row"><span>Bật âm thanh</span><input id="m-sound" type="checkbox" /></label>
-          <label class="m-row"><span>Âm lượng</span><input id="m-volume" type="range" min="0" max="1" step="0.05" /><b id="m-volume-v"></b></label>
-          <h3>Điều khiển</h3>
-          <label class="m-row"><span>Độ nhạy chuột</span><input id="m-sens" type="range" min="0.3" max="2.5" step="0.1" /><b id="m-sens-v"></b></label>
-          <label class="m-row"><span>Đảo trục dọc</span><input id="m-invert" type="checkbox" /></label>
-          <label class="m-row"><span>Rung tay cầm</span><input id="m-rumble" type="checkbox" /></label>
-        </section>
-        <section>
-          <h3>Giao diện</h3>
-          <label class="m-row"><span>Bản đồ nhỏ</span><input id="m-minimap" type="checkbox" /></label>
-          <label class="m-row"><span>Bảng trạng thái</span><input id="m-status" type="checkbox" /></label>
-          <label class="m-row"><span>Tên người chơi</span><input id="m-tags" type="checkbox" /></label>
-          <h3>Phím điều khiển</h3>
+          <h3>⌨️ Bàn phím &amp; chuột</h3>
           <div class="m-keys">
             <kbd>W A S D</kbd><span>Di chuyển</span>
             <kbd>Shift</kbd><span>Chạy</span>
@@ -143,8 +121,12 @@
             <kbd>C</kbd><span>Chế độ điện ảnh</span>
             <kbd>G</kbd><span>Quản lý clan</span>
             <kbd>/c</kbd><span>Chat riêng trong clan</span>
+            <kbd>Chuột kéo</kbd><span>Xoay camera · lăn: zoom</span>
+            <kbd>Nhấp bò khác</kbd><span>Xem thông tin · mời clan</span>
             <kbd>Esc</kbd><span>Mở / đóng cài đặt</span>
           </div>
+        </section>
+        <section>
           <h3>🎮 Tay cầm (Xbox / PlayStation)</h3>
           <div class="m-keys">
             <kbd>Cần trái</kbd><span>Di chuyển (đẩy nhẹ = đi chậm)</span>
@@ -160,6 +142,34 @@
             <kbd>View / Share</kbd><span>Quản lý clan</span>
             <kbd>Menu / Options</kbd><span>Mở / đóng cài đặt</span>
           </div>
+          <p class="m-note">Cắm dây hoặc Bluetooth rồi bấm 1 nút bất kỳ để game nhận tay cầm.</p>
+        </section>
+      </div>
+      <div id="pane-settings" class="menu-grid menu-pane">
+        <section>
+          <h3>Đồ hoạ</h3>
+          <label class="m-row"><span>Chất lượng</span>
+            <select id="m-quality">
+              <option value="low">Thấp</option>
+              <option value="medium">Trung bình</option>
+              <option value="high">Cao</option>
+              <option value="ultra">Rất cao</option>
+            </select>
+          </label>
+          <label class="m-row"><span>Góc nhìn (FOV)</span><input id="m-fov" type="range" min="45" max="80" step="1" /><b id="m-fov-v"></b></label>
+          <h3>Âm thanh</h3>
+          <label class="m-row"><span>Bật âm thanh</span><input id="m-sound" type="checkbox" /></label>
+          <label class="m-row"><span>Âm lượng</span><input id="m-volume" type="range" min="0" max="1" step="0.05" /><b id="m-volume-v"></b></label>
+        </section>
+        <section>
+          <h3>Giao diện</h3>
+          <label class="m-row"><span>Bản đồ nhỏ</span><input id="m-minimap" type="checkbox" /></label>
+          <label class="m-row"><span>Bảng trạng thái</span><input id="m-status" type="checkbox" /></label>
+          <label class="m-row"><span>Tên người chơi</span><input id="m-tags" type="checkbox" /></label>
+          <h3>Điều khiển</h3>
+          <label class="m-row"><span>Độ nhạy chuột</span><input id="m-sens" type="range" min="0.3" max="2.5" step="0.1" /><b id="m-sens-v"></b></label>
+          <label class="m-row"><span>Đảo trục dọc</span><input id="m-invert" type="checkbox" /></label>
+          <label class="m-row"><span>Rung tay cầm</span><input id="m-rumble" type="checkbox" /></label>
         </section>
       </div>
       <div class="menu-actions">
