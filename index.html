@@ -61,6 +61,7 @@
   <!-- Top-left status -->
   <div id="status" class="ui">
     <div class="status-name" id="txt-name">Bò Mimi</div>
+    <div class="status-row"><span>Máu</span><div class="bar"><i id="bar-health"></i></div></div>
     <div class="status-row"><span>Vui vẻ</span><div class="bar"><i id="bar-happy"></i></div></div>
     <div class="status-row"><span>No bụng</span><div class="bar"><i id="bar-food"></i></div></div>
     <div class="status-row"><span>Nước</span><div class="bar"><i id="bar-water"></i></div></div>
@@ -78,23 +79,6 @@
     <input id="chat-input" type="text" maxlength="220" placeholder="Nhập tin nhắn… (Enter gửi, Esc đóng)" autocomplete="off" />
   </div>
   <div id="tags"></div>
-
-  <!-- Bottom-left controls help -->
-  <div id="help" class="ui">
-    <b>WASD / Arrow Keys</b> — Move
-    <b>Shift</b> — Run
-    <b>Space</b> — Jump
-    <b>F</b> — Headbutt
-    <b>E (giữ)</b> — Gặm cỏ / Uống nước
-    <b>Q</b> — Moo
-    <b>Z</b> — Nằm
-    <b>Mouse</b> — Camera
-    <b>Wheel</b> — Zoom
-    <b>C</b> — Cinematic
-    <b>Enter</b> — Chat
-    <b>F3</b> — Debug
-    <b>Esc</b> — Cài đặt
-  </div>
 
   <!-- Settings menu (Esc) -->
   <div id="menu" class="hidden">
@@ -126,7 +110,6 @@
           <h3>Giao diện</h3>
           <label class="m-row"><span>Bản đồ nhỏ</span><input id="m-minimap" type="checkbox" /></label>
           <label class="m-row"><span>Bảng trạng thái</span><input id="m-status" type="checkbox" /></label>
-          <label class="m-row"><span>Hướng dẫn phím</span><input id="m-help" type="checkbox" /></label>
           <label class="m-row"><span>Tên người chơi</span><input id="m-tags" type="checkbox" /></label>
           <h3>Phím điều khiển</h3>
           <div class="m-keys">
@@ -155,6 +138,20 @@
     <div class="an-head">📢 THÔNG BÁO</div>
     <div class="an-text" id="announce-text"></div>
     <div class="an-by" id="announce-by"></div>
+  </div>
+  <!-- low health: red pulsing vignette -->
+  <div id="hurt"></div>
+
+  <!-- Death screen -->
+  <div id="death" class="hidden">
+    <div class="death-card">
+      <div class="death-icon" id="death-icon">💀</div>
+      <h2>Bò của bạn đã chết</h2>
+      <p id="death-reason"></p>
+      <div class="death-stats" id="death-stats"></div>
+      <button id="btn-respawn" type="button">Chơi lại (bê con mới)</button>
+      <small>Nhấn Enter để chơi lại</small>
+    </div>
   </div>
   <div id="toast" class="ui"></div>
   <div id="prompt" class="ui"></div>

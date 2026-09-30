@@ -467,6 +467,9 @@ export class Cow {
     // lying down: `lying` is the wish, `lie` animates 0 (standing) .. 1 (lying)
     this.lying = false;
     this.lie = 0;
+    // dead: the cow rolls over onto its side
+    this.dead = false;
+    this.deadK = 0;
     this.setAge(age);
   }
 
@@ -693,6 +696,21 @@ export class Cow {
     const cud = lieK * Math.sin(this.time * 5.5) * 0.025;
     this.head.rotation.x = -0.05 + this.graze * 0.3 + chew + thrust * 0.35 + cud;
     this.head.rotation.y = moving ? 0 : Math.sin(this.time * 0.35) * 0.25 * (1 - this.graze);
+
+    // dead: roll onto the side, legs stiff, head down
+    this.deadK += ((this.dead ? 1 : 0) - this.deadK) * Math.min(1, dt * 3);
+    const dk = smooth(0, 1, this.deadK);
+    if (dk > 0.001) {
+      this.body.rotation.z += (1.45 - this.body.rotation.z) * dk;
+      this.body.position.y += 0.3 * dk;
+      this.body.position.x = -0.12 * dk;
+      for (const L of this.legs) {
+        L.hip.rotation.x += ((L.front ? -0.25 : 0.25) - L.hip.rotation.x) * dk;
+        L.knee.rotation.x *= 1 - dk;
+      }
+      this.neck.rotation.x += (0.35 - this.neck.rotation.x) * dk;
+      this.head.rotation.y *= 1 - dk;
+    } else this.body.position.x = 0;
 
     // ears twitch
     this.earTimer -= dt;

@@ -222,6 +222,48 @@ export class AudioSys {
     return f;
   }
 
+  // low rumbling growl of a crocodile closing in
+  growl(vol = 1) {
+    if (!this.ctx || !this.enabled || vol <= 0.01) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(58, t);
+    o.frequency.linearRampToValueAtTime(46, t + 1.2);
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 17;
+    const lfoG = ctx.createGain(); lfoG.gain.value = 0.5;
+    const amp = ctx.createGain(); amp.gain.value = 0.5;
+    lfo.connect(lfoG).connect(amp.gain);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 260;
+    const g = ctx.createGain();
+    this._env(g, t, 0.15, 0.5 * vol, 1.3);
+    o.connect(lp).connect(amp).connect(g).connect(this.master);
+    o.start(t); o.stop(t + 1.35); lfo.start(t); lfo.stop(t + 1.35);
+  }
+
+  // jaws snapping shut + a big splash
+  snap() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this.ctx.currentTime;
+    this._noiseBurst(t, 'bandpass', 1800, 2, 0.5, 0.08);
+    this._noiseBurst(t, 'lowpass', 500, 0.7, 0.6, 0.35);
+    this._noiseBurst(t + 0.02, 'bandpass', 900, 0.6, 0.4, 0.9);
+    this._noiseBurst(t + 0.05, 'highpass', 2500, 0.5, 0.18, 0.7);
+  }
+
+  // short sad sting when the cow dies
+  death() {
+    if (!this.ctx || !this.enabled) return;
+    const t0 = this.ctx.currentTime + 0.2;
+    [392, 330, 262, 196].forEach((f, i) => {
+      const t = t0 + i * 0.32;
+      const o = this.ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = f;
+      const g = this.ctx.createGain();
+      this._env(g, t, 0.02, 0.18, i === 3 ? 1.4 : 0.4);
+      o.connect(g).connect(this.master);
+      o.start(t); o.stop(t + 1.5);
+    });
+  }
+
   // two-tone chime for admin announcements
   chime() {
     if (!this.ctx || !this.enabled) return;

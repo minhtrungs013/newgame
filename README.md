@@ -75,6 +75,12 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · 
 - Bò lội được chỗ nước nông nhưng không đi xuống chỗ sâu.
 - Thiếu nước thì bò không lớn được và sẽ gầy đi.
 
+## Máu, cá sấu và cái chết
+
+- **Máu** giảm dần khi No bụng hoặc Nước về 0 (cả hai cùng hết thì giảm gấp đôi, khoảng 45 giây là chết); ăn uống đủ thì máu tự hồi. Máu thấp thì viền màn hình nhấp nháy đỏ.
+- **Cá sấu** sống trong mọi hồ, bình thường chỉ lộ mắt và gờ lưng. Uống nước hay đứng sát bờ quá lâu thì nó bơi tới (có cảnh báo ⚠️ và tiếng gầm) rồi lao lên đớp. Thấy cảnh báo thì chạy xa khỏi bờ!
+- **Chết** (đói, khát hoặc bị cá sấu đớp) thì hiện màn hình kết thúc; bấm **Chơi lại** để bắt đầu lại từ bê con ở đồng cỏ xuất phát (giữ tên và ngoại hình).
+
 ## Lớn lên
 
 Mỗi lần vào game bò là **bê con**. Giữ **E** để gặm cỏ: no bụng tăng và bò lớn dần (Bê con → Bò tơ → Bò trưởng thành), tối đa bằng "Cỡ khi lớn" đã chọn. Chỉ khi để bụng đói hoặc khát nước thì bò mới gầy/nhỏ lại (bị húc chỉ bị hất văng, không nhỏ đi). Bò to húc mạnh hơn. Server giới hạn tốc độ lớn nên không gian lận được.

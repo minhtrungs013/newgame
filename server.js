@@ -256,6 +256,13 @@ function handle(p, text) {
       const now = Date.now();
       if (m.a === 'jump' && now - p.lastJump > 450) { p.lastJump = now; broadcast({ t: 'act', id: p.id, a: 'jump' }, p); }
       if (m.a === 'butt' && now - p.lastButt > 700) { p.lastButt = now; broadcast({ t: 'act', id: p.id, a: 'butt' }, p); }
+      // life events: eaten by a croc, died, respawned (others only see the animation)
+      if (['croc', 'die', 'respawn'].includes(m.a) && now - (p.lastLife || 0) > 300) {
+        p.lastLife = now;
+        if (m.a === 'respawn') { p.age = 0; p.ageT = now; }
+        broadcast({ t: 'act', id: p.id, a: m.a }, p);
+        if (m.a === 'die') console.log(`x ${p.name} died`);
+      }
       break;
     }
     case 'hit': {

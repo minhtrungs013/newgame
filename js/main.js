@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Terrain, heightAt, waterAt, pondsNear, fillPondUniforms } from './terrain.js';
 import { Water } from './water.js';
+import { Crocs } from './crocs.js';
 import { Grass } from './grass.js';
 import { Cow, BUTT_HIT_AT } from './cow.js';
 import { Sky } from './sky.js';
@@ -57,6 +58,11 @@ const terrain = new Terrain(scene);
 const grass = new Grass(scene);
 const world = new World(scene);
 const water = new Water(scene);
+const crocs = new Crocs(scene);
+
+// health: drains while starving or parched; at 0 the cow dies
+const HEALTH_DRAIN = 1 / 90;  // per second for each unmet need (hunger / thirst)
+const HEALTH_REGEN = 1 / 60;  // per second when fed and watered
 let cow = new Cow(scene);
 const audio = new AudioSys();
 const onStep = (sp) => {
@@ -151,6 +157,12 @@ const state = {
   canDrink: false,
   drinking: false,
   slurpTimer: 0,
+  health: 1,
+  dead: false,
+  deathShown: false,
+  nearShore: false,
+  shoreTimer: 0,
+  crocStalking: false,
   lightningTimer: 12,
   chewTimer: 0,
   shake: 0,            // camera shake amount
@@ -191,6 +203,10 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (menuOpen) return;
+  if (state.dead) {
+    if ((e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') && state.deathShown) { e.preventDefault(); respawn(); }
+    return;
+  }
   if (e.target.tagName === 'INPUT') return;
   if (e.target.tagName === 'SELECT') e.target.blur();
   const k = e.code;
@@ -264,7 +280,7 @@ $('btn-sound').addEventListener('click', (e) => { setSetting('sound', !settings.
 // ---------- settings (Esc menu), saved per browser ----------
 const settings = {
   quality: 'medium', fov: 55, sound: true, volume: 0.8, sens: 1, invert: false,
-  minimap: true, status: true, help: true, tags: true,
+  minimap: true, status: true, tags: true,
 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cow.settings') || '{}')); } catch {}
 if (!QUALITY[settings.quality]) settings.quality = 'medium';
@@ -293,7 +309,7 @@ function applySettings(key = null) {
   }
   if (all || key === 'sens') { $('m-sens').value = settings.sens; $('m-sens-v').textContent = `${settings.sens.toFixed(1)}×`; }
   if (all || key === 'invert') $('m-invert').checked = settings.invert;
-  for (const k of ['minimap', 'status', 'help', 'tags']) {
+  for (const k of ['minimap', 'status', 'tags']) {
     if (all || key === k) { document.body.classList.toggle(`hide-${k}`, !settings[k]); $(`m-${k}`).checked = settings[k]; }
   }
 }
@@ -308,7 +324,7 @@ $('m-sound').addEventListener('change', (e) => setSetting('sound', e.target.chec
 $('m-volume').addEventListener('input', (e) => setSetting('volume', Number(e.target.value)));
 $('m-sens').addEventListener('input', (e) => setSetting('sens', Number(e.target.value)));
 $('m-invert').addEventListener('change', (e) => setSetting('invert', e.target.checked));
-for (const k of ['minimap', 'status', 'help', 'tags']) $(`m-${k}`).addEventListener('change', (e) => setSetting(k, e.target.checked));
+for (const k of ['minimap', 'status', 'tags']) $(`m-${k}`).addEventListener('change', (e) => setSetting(k, e.target.checked));
 
 let menuOpen = false;
 function toggleMenu(open = !menuOpen) {
@@ -499,6 +515,9 @@ const net = new Net(scene, $('tags'), {
     audio.moo(vol, pan, 0.9 + (r.id % 5) * 0.06);
   },
   onRemoteAct(r, a) {
+    if (a === 'croc') { crocs.attackAt(r.cow.pos); const sp = spatial(r.cow.pos, 60); if (sp.vol > 0) audio.snap(); return; }
+    if (a === 'die') { r.cow.dead = true; r.cow.lying = false; r.tag.say('💀', 3); return; }
+    if (a === 'respawn') { r.cow.dead = false; r.cow.setAge(0); r.target.a = 0; return; }
     const { vol } = spatial(r.cow.pos, 50);
     if (a === 'jump') {
       r.cow.onLand ??= (v) => audio.land(v, spatial(r.cow.pos, 50).vol);
@@ -508,6 +527,7 @@ const net = new Net(scene, $('tags'), {
     }
   },
   onHit(r, dx, dz, power) {
+    if (state.dead) return;
     // we got headbutted: fly back, hop, get dizzy for a moment
     cow.knockback(dx, dz, power);
     audio.bonk(1);
@@ -635,6 +655,45 @@ function setAge(a) {
   }
 }
 
+const DEATH_TEXT = {
+  croc: ['🐊', 'Bị cá sấu đớp khi đang ở mép hồ. Đừng uống nước hay đứng sát bờ quá lâu!'],
+  starve: ['🌾', 'Chết đói. Nhớ giữ E để gặm cỏ thường xuyên.'],
+  thirst: ['💧', 'Chết khát. Tìm hồ nước và giữ E ở mép nước để uống.'],
+  both: ['💀', 'Vừa đói vừa khát. Hãy ăn cỏ và uống nước đều đặn.'],
+};
+function killCow(reason) {
+  if (state.dead) return;
+  state.dead = true;
+  cow.dead = true; cow.lying = false; cow.speed = 0; cow.grazeTimer = 0;
+  state.keys.clear();
+  net.send({ t: 'act', a: 'die' });
+  selfTag.say('💀', 3);
+  audio.death();
+  const [icon, text] = DEATH_TEXT[reason] || DEATH_TEXT.both;
+  const m = state.distance;
+  $('death-icon').textContent = icon;
+  $('death-reason').textContent = text;
+  $('death-stats').textContent = `Đã lớn tới: ${state.stage} (${Math.round(state.age * 100)}%) · Quãng đường: ${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km'}`;
+  setTimeout(() => { $('death').classList.remove('hidden'); state.deathShown = true; $('btn-respawn').focus(); }, 1800);
+}
+function respawn() {
+  if (!state.dead) return;
+  $('death').classList.add('hidden');
+  state.dead = false; state.deathShown = false;
+  cow.dead = false; cow.deadK = 0; cow.lie = 0; cow.knock.set(0, 0); cow.vy = 0; cow.air = 0;
+  // brand new calf at the spawn meadow
+  state.age = 0; cow.setAge(0); state.stage = stageOf(0);
+  state.food = 0.5; state.water = 0.7; state.health = 1; state.happy = 0.6; state.distance = 0;
+  state.starvingWarned = false; state.thirstWarned = false;
+  const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 6;
+  cow.pos.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+  cow.heading = Math.random() * Math.PI * 2;
+  state.yaw = state.camYaw = cow.heading + Math.PI;
+  net.send({ t: 'act', a: 'respawn' });
+  toast('Một chú bê con mới chào đời 🐮');
+}
+$('btn-respawn').addEventListener('click', () => respawn());
+
 function updateCow(dt) {
   const k = state.keys;
   const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
@@ -642,7 +701,7 @@ function updateCow(dt) {
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
   let targetSpeed = 0;
   if (state.started && cow.lying && (f || r)) toggleLie();
-  const canControl = state.started && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying;
+  const canControl = state.started && !state.dead && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying;
   if (canControl && (f || r)) {
     // camera-relative movement
     const fx = -Math.sin(state.camYaw), fz = -Math.cos(state.camYaw);
@@ -735,6 +794,18 @@ function updateCow(dt) {
     state.chewTimer -= dt;
     if (state.chewTimer < 0) { state.chewTimer = 0.32 + Math.random() * 0.1; audio.chew(); }
   }
+  if (state.dead) { state.drinking = false; return; }
+  // on the shore? (any water within a couple of metres) - crocodiles notice loiterers
+  state.shoreTimer -= dt;
+  if (state.shoreTimer < 0) {
+    state.shoreTimer = 0.2;
+    let near = !!wHere;
+    for (let i = 0; i < 8 && !near; i++) {
+      const a = (i / 8) * Math.PI * 2, r = 2.5 * Math.max(0.7, cow.size);
+      if (waterAt(cow.pos.x + Math.cos(a) * r, cow.pos.z + Math.sin(a) * r)) near = true;
+    }
+    state.nearShore = near;
+  }
   const rest = cow.isDown ? 0.4 : 1; // resting cows get hungry / thirsty more slowly
   state.food = Math.max(0, state.food - dt * (0.004 + cow.speed * 0.0015) * rest);
   state.water = Math.max(0, state.water - dt * (0.005 + cow.speed * 0.002) * rest);
@@ -748,6 +819,13 @@ function updateCow(dt) {
     setAge(state.age - STARVE_SHRINK * dt);
     if (!state.starvingWarned) { state.starvingWarned = true; toast('Bò đói quá, đang gầy đi… Giữ E để gặm cỏ!'); }
   } else if (state.food > 0.2) state.starvingWarned = false;
+  // health: hunger and thirst each drain it; well fed & watered it recovers
+  if (state.started) {
+    const starving = state.food <= 0.02, parched = state.water <= 0.02;
+    if (starving || parched) state.health -= HEALTH_DRAIN * ((starving ? 1 : 0) + (parched ? 1 : 0)) * dt;
+    else if (state.food > 0.3 && state.water > 0.3) state.health = Math.min(1, state.health + HEALTH_REGEN * dt);
+    if (state.health <= 0) { state.health = 0; killCow(starving && parched ? 'both' : starving ? 'starve' : 'thirst'); }
+  }
   const targetHappy = 0.2 + state.food * 0.35 + state.water * 0.3 + (cow.speed > 0.5 ? 0.15 : cow.isDown ? 0.18 : 0.05) - env.weather.rain * 0.05;
   state.happy += (targetHappy - state.happy) * dt * 0.05;
 }
@@ -893,7 +971,14 @@ function updateHud(dt) {
   $('bar-food').style.width = `${Math.round(state.food * 100)}%`;
   $('bar-grow').style.width = `${Math.round(state.age * 100)}%`;
   $('bar-water').style.width = `${Math.round(state.water * 100)}%`;
-  const prompt = cow.lying ? 'Đang nằm nghỉ… 💤  (Z để đứng dậy)'
+  $('bar-health').style.width = `${Math.round(state.health * 100)}%`;
+  const low = state.started && !state.dead && state.health < 0.35;
+  $('hurt').style.opacity = low ? String(0.35 + (0.35 - state.health) * 1.8) : '0';
+  $('hurt').classList.toggle('pulse', low);
+  const danger = state.crocStalking && !state.dead;
+  $('prompt').classList.toggle('danger', danger);
+  const prompt = state.dead ? '' : danger ? '⚠️ Coi chừng cá sấu! Tránh xa bờ hồ ngay!'
+    : cow.lying ? 'Đang nằm nghỉ… 💤  (Z để đứng dậy)'
     : state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
   $('prompt').textContent = prompt;
   $('prompt').classList.toggle('show', !!prompt && state.started);
@@ -982,6 +1067,12 @@ function tick(dt) {
   terrain.update(cow.pos.x, cow.pos.z);
   world.update(cow.pos.x, cow.pos.z);
   water.update(cow.pos.x, cow.pos.z);
+  const cr = crocs.update(dt, state.time, {
+    cow, alive: state.started && !state.dead, drinking: state.drinking, nearShore: state.nearShore,
+    onStalk: () => { audio.growl(); toast('⚠️ Có gì đó đang bơi về phía bạn…'); },
+    onBite: () => { audio.snap(); net.send({ t: 'act', a: 'croc' }); state.shake = 0.8; killCow('croc'); },
+  });
+  state.crocStalking = cr.stalking;
   updateCamera(dt);
   updateEnvironment(dt);
   audio.update(dt, env, state.time);
@@ -993,4 +1084,4 @@ function tick(dt) {
   updateHud(dt);
 }
 requestAnimationFrame(frame);
-window.__game = { state, cow, env, world, grass, water, net, customizer, tick };
+window.__game = { state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn };
