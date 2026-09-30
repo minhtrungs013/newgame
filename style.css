@@ -388,3 +388,69 @@ body.hide-tags #tags .nametag:not(.self) .name { display: none; }
 .menu-actions .m-spacer { flex: 1; }
 .menu-actions button.m-danger { background: rgba(220, 80, 70, .18); color: #f4b8b0; border: 1px solid rgba(220, 80, 70, .45); }
 .menu-actions button.m-danger:hover { background: rgba(220, 80, 70, .3); color: #fff; }
+
+/* ---------- menu tabs ---------- */
+.menu-tabs { display: flex; gap: 6px; }
+.menu-tabs button {
+  font: inherit; font-size: 17px; font-weight: 700; color: #aab3a4; background: transparent; cursor: pointer;
+  border: none; border-bottom: 2px solid transparent; padding: 4px 10px 6px;
+}
+.menu-tabs button.sel { color: #fff; border-bottom-color: #d8e8a8; }
+.menu-tabs kbd { font: 600 10px/1 Consolas, monospace; padding: 2px 4px; border-radius: 3px; background: rgba(255,255,255,.1); vertical-align: 2px; }
+.menu-pane.hidden { display: none; }
+#pane-clan { min-height: 320px; max-height: 62vh; overflow-y: auto; }
+
+/* ---------- clan manager ---------- */
+.c-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.c-card { background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.08); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.c-card h3 { margin: 2px 0; font-size: 15px; }
+.c-empty { color: #9aa196; font-size: 14px; padding: 20px 4px; text-align: center; }
+.c-row { display: flex; gap: 6px; }
+.c-input {
+  width: 100%; min-width: 0; font: inherit; font-size: 13px; color: #fff; background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.16); border-radius: 7px; padding: 7px 9px; outline: none;
+}
+.c-input:focus { border-color: #d8e8a8; }
+.c-tag-input { flex: 0 0 76px; text-transform: uppercase; font-weight: 700; letter-spacing: .08em; }
+.c-label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #9aa196; margin-top: 4px; }
+.c-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.c-swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,.2); cursor: pointer; padding: 0; }
+.c-swatch.sel { border-color: #fff; box-shadow: 0 0 0 2px rgba(216,232,168,.8); }
+.c-check { font-size: 13px; color: #c2c8bd; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.c-check input { accent-color: #9fd05a; width: 16px; height: 16px; }
+.c-btn {
+  font: inherit; font-size: 13px; font-weight: 600; color: #dfe4d8; background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 7px 12px; cursor: pointer; align-self: flex-start;
+}
+.c-btn:hover { background: rgba(255,255,255,.18); }
+.c-primary { background: #d8e8a8; color: #1c2416; border-color: transparent; }
+.c-primary:hover { background: #e6f3bd; }
+.c-danger { background: rgba(220,80,70,.16); color: #f4b8b0; border-color: rgba(220,80,70,.4); }
+.c-danger:hover { background: rgba(220,80,70,.3); color: #fff; }
+.c-small { padding: 4px 9px; font-size: 12px; }
+.c-list { display: flex; flex-direction: column; gap: 8px; }
+.c-item { display: flex; flex-direction: column; gap: 5px; padding: 9px 10px; border-radius: 9px; background: rgba(255,255,255,.04); }
+.c-item-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.c-item-name { font-weight: 600; flex: 1; }
+.c-muted { color: #9aa196; font-size: 12px; }
+.c-tagpill { color: #141612; font-size: 12px; font-weight: 800; letter-spacing: .06em; padding: 3px 7px; border-radius: 6px; }
+.c-tagpill.c-big { font-size: 18px; padding: 8px 10px; border-radius: 10px; }
+.c-clan-head { display: flex; gap: 12px; align-items: center; }
+.c-desc { margin: 0; font-size: 13px; color: #dfe4d8; }
+.c-hint { font-size: 12px; color: #a8c890; background: rgba(160,210,120,.08); border-radius: 7px; padding: 6px 8px; }
+.c-settings { display: flex; flex-direction: column; gap: 7px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 8px; }
+.c-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.c-member { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,.05); flex-wrap: wrap; font-size: 13px; }
+.c-member-name { flex: 1; min-width: 90px; font-weight: 600; }
+.c-you { color: #d8e8a8; font-weight: 500; }
+.c-role { color: #c2c8bd; font-size: 12px; }
+.c-level { color: #fff; font-size: 12px; min-width: 38px; }
+.c-member-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.c-dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex: none; }
+.c-dot.on { background: #7fd35a; box-shadow: 0 0 5px #7fd35a; }
+@media (max-width: 700px) { .c-grid { grid-template-columns: 1fr; } }
+
+/* clan tag above cows + clan chat */
+.nametag .clan-tag { font-weight: 800; }
+#chat-log div.clan-msg { background: rgba(40, 70, 40, .6); }
+#chat-log div.clan-msg b.clan-label { margin-right: 4px; }

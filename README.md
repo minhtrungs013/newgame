@@ -111,6 +111,15 @@ MONGODB_DB=newgame
 Trong MongoDB Atlas → **Network Access** phải cho phép `0.0.0.0/0` (Render không có IP cố định).
 Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
 
+## Clan
+
+Nhấn **G** (hoặc Esc → tab **Clan**) để quản lý clan — cần đăng nhập.
+
+- **Chưa có clan**: tạo clan (tên 3–20 ký tự, tag 2–4 chữ in hoa/số, màu, mở hoặc cần duyệt, mô tả) hoặc xin vào clan có sẵn.
+- **Trong clan**: danh sách thành viên (level, online), 👑 trưởng / ⭐ phó / thành viên. Trưởng: phong/hạ phó, kick, chuyển quyền, sửa cài đặt, giải tán. Phó: duyệt đơn, kick thành viên. Trưởng rời clan thì quyền tự chuyển cho phó (hoặc người vào lâu nhất). Tối đa 20 người.
+- **Đồng đội**: cùng clan húc nhau không có tác dụng. Khác clan hoặc không có clan thì mỗi cú húc mất ~7–22% máu (bò to húc đau hơn) — hết máu là chết. Server tính sát thương và giới hạn tốc độ hồi máu.
+- Tên hiện tag clan có màu (**[TAG] Tên · Lv**), đồng đội hiện màu clan trên minimap. Chat riêng clan: `/c <tin nhắn>`.
+
 ## Thông báo admin
 
 Gõ trong ô chat (Enter):

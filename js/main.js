@@ -11,6 +11,7 @@ import { World } from './world.js';
 import { AudioSys } from './audio.js';
 import { Net, NameTag } from './net.js';
 import { Customizer } from './customize.js';
+import { ClanPanel } from './clan-ui.js';
 import { MAX_COWS } from './grass.js';
 import { WEATHERS } from './environment.js';
 
@@ -158,6 +159,8 @@ const state = {
   canDrink: false,
   drinking: false,
   slurpTimer: 0,
+  clan: null,          // { id, tag, color, name } of my clan
+  lastHitBy: '',
   health: 1,
   dead: false,
   deathShown: false,
@@ -228,6 +231,7 @@ addEventListener('keydown', (e) => {
     state.happy = Math.min(1, state.happy + 0.03);
   }
   if (k === 'KeyE' && state.started && cow.speed < 0.6 && !cow.lying) cow.startGraze(1.5);
+  if (k === 'KeyG' && state.started) { toggleMenu(true, 'clan'); return; }
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
     document.body.classList.toggle('cinematic', state.cinematic);
@@ -328,7 +332,18 @@ $('m-invert').addEventListener('change', (e) => setSetting('invert', e.target.ch
 for (const k of ['minimap', 'status', 'tags']) $(`m-${k}`).addEventListener('change', (e) => setSetting(k, e.target.checked));
 
 let menuOpen = false;
-function toggleMenu(open = !menuOpen) {
+let menuPane = 'settings';
+function showPane(pane) {
+  menuPane = pane;
+  for (const b of document.querySelectorAll('.menu-tabs button')) b.classList.toggle('sel', b.dataset.pane === pane);
+  $('pane-settings').classList.toggle('hidden', pane !== 'settings');
+  $('pane-clan').classList.toggle('hidden', pane !== 'clan');
+  if (pane === 'clan') clanPanel.refresh();
+}
+for (const b of document.querySelectorAll('.menu-tabs button')) b.addEventListener('click', () => showPane(b.dataset.pane));
+function toggleMenu(open = !menuOpen, pane = null) {
+  if (open && pane) showPane(pane);
+  else if (open && !menuOpen && menuPane === 'clan') clanPanel.refresh();
   menuOpen = open;
   $('menu').classList.toggle('hidden', !open);
   state.keys.clear(); // don't keep walking with a key that was held when the menu opened
@@ -414,6 +429,26 @@ $('acc-logout').addEventListener('click', async () => {
   showAccount(null);
   if (token) api('/api/logout', { token }).catch(() => {});
 });
+
+// ---------- clan manager ----------
+const clanPanel = new ClanPanel({
+  root: $('pane-clan'),
+  getToken: () => account.token,
+  getUsername: () => account.username,
+  toast: (t) => toast(t),
+});
+function showMyName() {
+  const name = net.name || $('inp-name').value || 'Bò Mimi';
+  $('txt-name').replaceChildren();
+  if (state.clan) {
+    const t = document.createElement('span');
+    t.className = 'clan-tag';
+    t.textContent = `[${state.clan.tag}] `;
+    t.style.color = state.clan.color;
+    $('txt-name').append(t);
+  }
+  $('txt-name').append(name);
+}
 
 // ---------- start screen ----------
 const customizer = new Customizer($('customizer'));
@@ -531,11 +566,20 @@ chatInput.addEventListener('keydown', (e) => {
   closeChat();
 });
 chatInput.addEventListener('blur', () => $('chat').classList.remove('open'));
-function addChat(name, text, system = false) {
+function addChat(name, text, system = false, clan = null) {
   const log = $('chat-log');
   const row = document.createElement('div');
   if (system) { row.className = 'sys'; row.textContent = text; }
   else {
+    if (clan) {
+      // clan-only message
+      row.className = 'clan-msg';
+      const c = document.createElement('b');
+      c.className = 'clan-label';
+      c.textContent = `[${clan.tag}]`;
+      c.style.color = clan.color;
+      row.append(c);
+    }
     const b = document.createElement('b');
     b.textContent = name;
     row.append(b, document.createTextNode(text));
@@ -565,6 +609,8 @@ const net = new Net(scene, $('tags'), {
     $('net-text').textContent = s === 'online' ? 'Online' : s === 'connecting' ? 'Đang kết nối…' : 'Offline';
   },
   onWelcome(m) {
+    state.clan = m.clan || null;
+    showMyName();
     if (m.profile) {
       setXp(m.profile.xp, true);
       state.food = m.profile.food; state.water = m.profile.water; state.health = m.profile.health;
@@ -579,6 +625,14 @@ const net = new Net(scene, $('tags'), {
       : 'Đã vào đồng cỏ. Gửi địa chỉ server cho bạn bè để chơi chung!', true);
   },
   onSystem(text) { addChat('', text, true); },
+  onMyClan(clan) {
+    const before = state.clan;
+    state.clan = clan;
+    showMyName();
+    if (clan && (!before || before.id !== clan.id)) { addChat('', `🛡️ Bạn đã vào clan [${clan.tag}] ${clan.name}. Chat riêng clan: /c <tin nhắn>`, true); toast(`🛡️ Đã vào clan [${clan.tag}]`); }
+    if (!clan && before) addChat('', `Bạn đã rời clan [${before.tag}].`, true);
+  },
+  onClanUpdate() { if (menuOpen && menuPane === 'clan') clanPanel.refresh(); },
   onKicked(text) { addChat('', text || 'Bạn đã bị ngắt kết nối.', true); toast(text || 'Bạn đã bị ngắt kết nối.'); },
   // admin banner: a = { text, by } to show, null to hide; initial = state sent on join
   onAnnounce(a, initial) {
@@ -596,8 +650,9 @@ const net = new Net(scene, $('tags'), {
     audio.chime();
     if (!initial) addChat('', `📢 Thông báo: ${a.text}`, true);
   },
-  onChat(name, text, remote, isSelf) {
-    addChat(name, text);
+  onChat(name, text, remote, isSelf, m = {}) {
+    if (m.sys) { addChat('', text, true); return; }
+    addChat(name, text, false, m.clan ? { tag: m.clan, color: m.color } : null);
     if (isSelf) selfTag.say(text);
     else if (remote) remote.tag.say(text);
   },
@@ -618,10 +673,14 @@ const net = new Net(scene, $('tags'), {
       if (r.cow.startButt()) audio.whoosh(vol);
     }
   },
-  onHit(r, dx, dz, power) {
+  onHit(r, dx, dz, power, dmg = 0, hp) {
     if (state.dead) return;
-    // we got headbutted: fly back, hop, get dizzy for a moment
+    // we got headbutted: fly back, hop, get dizzy for a moment - and lose health
     cow.knockback(dx, dz, power);
+    if (dmg > 0) {
+      state.health = Math.max(0, Math.min(state.health - dmg, typeof hp === 'number' ? hp : 1));
+      if (state.health <= 0) { state.lastHitBy = r ? r.name : 'ai đó'; killCow('butt'); return; }
+    }
     audio.bonk(1);
     selfTag.say('Úi! 💥', 1.5);
     state.shake = 0.45;
@@ -706,6 +765,7 @@ function checkButtHit() {
     const d = Math.hypot(dx, dz);
     if (d > 1.4 * (cow.size + r.cow.size) || d < 0.01) continue;
     if ((dx * fx + dz * fz) / d < 0.45) continue; // must be in front of us
+    if (state.clan && r.clan && r.clan.id === state.clan.id) continue; // teammate
     if (Math.abs(r.cow.air - cow.air) > 1.2) continue;
     if (d < bestD) { best = r; bestD = d; }
   }
@@ -759,7 +819,9 @@ function killCow(reason) {
   net.send({ t: 'act', a: 'die' });
   selfTag.say('💀', 3);
   audio.death();
-  const [icon, text] = DEATH_TEXT[reason] || DEATH_TEXT.both;
+  const [icon, text] = reason === 'butt'
+    ? ['💥', state.clan ? `Bị ${state.lastHitBy} húc gục! Người khác clan húc sẽ mất máu - hãy đi cùng đồng đội.` : `Bị ${state.lastHitBy} húc gục! Vào clan (phím G) để có đồng đội - người cùng clan không húc mất máu nhau.`]
+    : DEATH_TEXT[reason] || DEATH_TEXT.both;
   const m = state.distance;
   $('death-icon').textContent = icon;
   $('death-reason').textContent = text;
@@ -1133,7 +1195,8 @@ function drawMinimap() {
     const far = d > MM_RANGE;
     if (far) { dx *= MM_RANGE / d; dz *= MM_RANGE / d; }
     const [x, y] = toScreen(dx, dz);
-    mctx.fillStyle = far ? 'rgba(255,196,90,0.7)' : '#ffc45a';
+    const mate = state.clan && r.clan && r.clan.id === state.clan.id;
+    mctx.fillStyle = mate ? state.clan.color : far ? 'rgba(255,196,90,0.7)' : '#ffc45a';
     mctx.beginPath(); mctx.arc(x, y, far ? 3 : 4, 0, Math.PI * 2); mctx.fill();
     if (!far) { mctx.fillStyle = 'rgba(255,255,255,0.85)'; mctx.fillText(r.name, x, y - 7); }
   }

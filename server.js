@@ -81,6 +81,14 @@ function sendJson(res, code, obj) {
 }
 async function handleApi(req, res, url) {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  if (url.startsWith('/api/clan/')) {
+    const auth = await userFromToken((req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!auth) return sendJson(res, 401, { error: 'Cần đăng nhập để dùng clan.' });
+    const body = req.method === 'POST' ? await readBody(req) : {};
+    if (!body) return sendJson(res, 400, { error: 'Dữ liệu không hợp lệ.' });
+    const r = await clans.handle(url.slice('/api/clan/'.length), auth, body);
+    return sendJson(res, r.code, r.json);
+  }
   if (url === '/api/me' && req.method === 'GET') {
     const auth = await userFromToken((req.headers.authorization || '').replace(/^Bearer /, ''));
     return auth ? sendJson(res, 200, publicProfile(auth.user)) : sendJson(res, 401, { error: 'Phiên đăng nhập đã hết hạn.' });
@@ -111,6 +119,29 @@ async function handleApi(req, res, url) {
   }
   return sendJson(res, 404, { error: 'Not found' });
 }
+
+// ---------- clans ----------
+const { createClans } = require('./clans');
+const BUTT_DAMAGE = 0.12;          // health lost per headbutt from a non-teammate (x power 0.6..1.8)
+const MAX_HEAL_PER_SEC = 1 / 40;   // clients regen at 1/60 per s; anything faster is ignored
+const clans = createClans({
+  store, userKey, levelOf,
+  onlineUsers: () => new Set([...players.values()].filter((p) => p.ready && p.user).map((p) => p.user.toLowerCase())),
+  // roster / tag changed for these accounts: update online players and tell everyone
+  notify(usernames, clanPub, clanId) {
+    const names = new Set(usernames.map((u) => u.toLowerCase()));
+    for (const p of players.values()) {
+      if (!p.ready || !p.user) continue;
+      const affected = names.has(p.user.toLowerCase());
+      if (affected && clanPub !== undefined) {
+        p.clan = clanPub;
+        broadcast({ t: 'pclan', id: p.id, clan: clanPub });
+      }
+      if (affected || (p.clan && p.clan.id === clanId)) p.conn.send({ t: 'clanupd' });
+    }
+  },
+});
+const sameClan = (a, b) => !!(a.clan && b.clan && a.clan.id === b.clan.id);
 
 // write a logged-in player's current progress into their account
 async function saveProfile(p) {
@@ -283,7 +314,7 @@ function cleanLook(l) {
     acc: pick(l.acc, ACCESSORIES, 'none'), accColor: hex(l.accColor, '#d83a3a'),
   };
 }
-const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l });
+const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l, clan: p.clan || null });
 const bodySize = (p) => CALF_SIZE + ((p.look ? p.look.size : 1) - CALF_SIZE) * p.age;
 
 function broadcast(obj, except) {
@@ -346,12 +377,15 @@ async function hello(p, m) {
     if (typeof pr.x === 'number' && typeof pr.z === 'number') { p.x = pr.x; p.z = pr.z; p.h = num(pr.h, -1e4, 1e4, 0); }
     profile = { username: p.user, xp: p.xp, food: p.food, water: p.water, health: p.health, x: p.x, z: p.z, h: p.h };
     p.saveDirty = true;
+    const c = fresh.clanId ? await clans.getClan(fresh.clanId) : null;
+    p.clan = clans.pub(c);
   }
   p.age = levelOf(p.xp) / LEVEL_MAX;
   p.xpT = Date.now();
+  p.hpT = Date.now();
   p.ready = true;
   p.conn.send({
-    t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(), announce: announcement, profile,
+    t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(), announce: announcement, profile, clan: p.clan || null,
     players: [...players.values()].filter(o => o.ready && o !== p).map(publicInfo),
   });
   broadcast({ t: 'join', p: publicInfo(p) }, p);
@@ -379,9 +413,12 @@ function handle(p, text) {
         const maxXp = p.xp + ((now - p.xpT) / 1000) * MAX_XP_PER_SEC;
         p.xp = Math.min(num(m.xp, 0, XP_MAX, p.xp), maxXp);
         p.age = levelOf(p.xp) / LEVEL_MAX;
-        p.food = num(m.f, 0, 1, p.food); p.water = num(m.w, 0, 1, p.water); p.health = num(m.hp, 0, 1, p.health);
+        p.food = num(m.f, 0, 1, p.food); p.water = num(m.w, 0, 1, p.water);
+        const maxHp = p.health + ((now - (p.hpT || now)) / 1000) * MAX_HEAL_PER_SEC;
+        p.health = Math.min(num(m.hp, 0, 1, p.health), maxHp);
       }
       p.xpT = now;
+      p.hpT = now;
       p.saveDirty = true;
       p.dirty = true;
       break;
@@ -420,11 +457,20 @@ function handle(p, text) {
       const dx = target.x - p.x, dz = target.z - p.z;
       const d = Math.hypot(dx, dz);
       if (d > 4.5) return; // too far apart (allows for some network lag)
+      if (sameClan(p, target)) return; // clan mates are teammates: no knockback, no damage
+      if (target.dead) return;
       p.lastHit = now;
       const nx = d > 0.01 ? dx / d : Math.sin(p.h), nz = d > 0.01 ? dz / d : Math.cos(p.h);
-      // bigger cows hit harder (knockback only - being butted doesn't shrink you)
+      // bigger cows hit harder: stronger knockback and more damage
       const power = Math.min(1.8, Math.max(0.6, bodySize(p) / bodySize(target)));
-      target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3), p: +power.toFixed(2) });
+      const dmg = +(BUTT_DAMAGE * power).toFixed(3);
+      target.health = Math.max(0, target.health - dmg);
+      target.hpT = now;
+      target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3), p: +power.toFixed(2), dmg, hp: +target.health.toFixed(3) });
+      if (target.health <= 0) {
+        p.conn.send({ t: 'sys', text: `💪 Bạn đã húc gục ${target.name}!` });
+        broadcast({ t: 'chat', id: 0, name: '', text: `💥 ${target.name} đã bị ${p.name} húc gục`, sys: true });
+      }
       const fx = JSON.stringify({ t: 'hitfx', from: p.id, to: target.id });
       for (const o of players.values()) if (o.ready && o !== p && o !== target) o.conn.send(fx);
       break;
@@ -439,6 +485,15 @@ function handle(p, text) {
       // admin commands are handled here and never shown as chat
       const cmd = String(m.text ?? '').trim().match(/^\/(ONADMIN|OFFADMIN|ADMIN)(?:\s+([\s\S]*))?$/i);
       if (cmd) { adminCommand(p, cmd[1].toUpperCase(), cmd[2] || ''); break; }
+      const cc = String(m.text ?? '').trim().match(/^\/(?:c|clan)\s+([\s\S]+)$/i);
+      if (cc) {
+        if (!p.clan) { p.conn.send({ t: 'sys', text: 'Bạn chưa có clan (nhấn G để mở quản lý clan).' }); break; }
+        const t = clean(cc[1], 120);
+        if (!t) break;
+        const msg = JSON.stringify({ t: 'chat', id: p.id, name: p.name, text: t, clan: p.clan.tag, color: p.clan.color });
+        for (const o of players.values()) if (o.ready && sameClan(o, p)) o.conn.send(msg);
+        break;
+      }
       const txt = clean(m.text, 120);
       if (txt) broadcast({ t: 'chat', id: p.id, name: p.name, text: txt });
       break;

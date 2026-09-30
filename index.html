@@ -84,10 +84,14 @@
   <div id="menu" class="hidden">
     <div class="menu-card" role="dialog" aria-label="Cài đặt">
       <div class="menu-head">
-        <h2>Cài đặt</h2>
-        <small>Game nhiều người chơi vẫn tiếp diễn khi mở cài đặt</small>
+        <div class="menu-tabs">
+          <button type="button" data-pane="settings" class="sel">⚙️ Cài đặt</button>
+          <button type="button" data-pane="clan">🛡️ Clan <kbd>G</kbd></button>
+        </div>
+        <small>Game nhiều người chơi vẫn tiếp diễn khi mở menu</small>
       </div>
-      <div class="menu-grid">
+      <div id="pane-clan" class="menu-pane hidden"></div>
+      <div id="pane-settings" class="menu-grid menu-pane">
         <section>
           <h3>Đồ hoạ</h3>
           <label class="m-row"><span>Chất lượng</span>
@@ -122,6 +126,8 @@
             <kbd>Z</kbd><span>Nằm / đứng dậy</span>
             <kbd>Enter</kbd><span>Chat</span>
             <kbd>C</kbd><span>Chế độ điện ảnh</span>
+            <kbd>G</kbd><span>Quản lý clan</span>
+            <kbd>/c</kbd><span>Chat riêng trong clan</span>
             <kbd>Esc</kbd><span>Mở / đóng cài đặt</span>
           </div>
         </section>

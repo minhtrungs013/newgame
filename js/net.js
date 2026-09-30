@@ -25,6 +25,18 @@ export class NameTag {
     container.appendChild(this.el);
     this.bubbleTimer = 0;
   }
+  // "[TAG] Name · Lv3" with the clan tag in the clan colour
+  setLabel(name, level, clan) {
+    this.label.replaceChildren();
+    if (clan) {
+      const t = document.createElement('span');
+      t.className = 'clan-tag';
+      t.textContent = `[${clan.tag}]`;
+      t.style.color = clan.color;
+      this.label.append(t, ' ');
+    }
+    this.label.append(level == null ? name : `${name} · Lv${level}`);
+  }
   say(text, seconds = 5) {
     this.bubble.textContent = text;
     this.bubble.classList.add('show');
@@ -62,6 +74,7 @@ class Remote {
     if (p.l) this.cow.lie = 1;
     this.tag = new NameTag(tags, p.name);
     this.lv = -1;
+    this.clan = p.clan || null; // { id, tag, color, name } - same clan = teammate
     this.labelPos = new THREE.Vector3();
   }
   update(dt, camera) {
@@ -80,7 +93,7 @@ class Remote {
     c.lying = t.l > 0.5;
     // name tag shows the level (server sends age = level / 30)
     const lv = Math.round(t.a * 30);
-    if (lv !== this.lv) { this.lv = lv; this.tag.label.textContent = `${this.name} · Lv${lv}`; }
+    if (lv !== this.lv) { this.lv = lv; this.tag.setLabel(this.name, lv, this.clan); }
     // grow / shrink smoothly towards the age the owner reports
     if (Math.abs(t.a - c.age) > 0.001) c.setAge(c.age + (t.a - c.age) * Math.min(1, dt * 3));
     c.updatePhysics(dt); // jump arcs are simulated locally from 'act' events
@@ -200,9 +213,19 @@ export class Net {
       }
       case 'chat': {
         const r = this.remotes.get(m.id);
-        this.h.onChat(m.name, m.text, r || null, m.id === this.id);
+        this.h.onChat(m.name, m.text, r || null, m.id === this.id, m);
         break;
       }
+      case 'pclan': {
+        // a player's clan changed (joined / left / kicked / tag colour)
+        if (m.id === this.id) { this.h.onMyClan(m.clan); break; }
+        const r = this.remotes.get(m.id);
+        if (r) { r.clan = m.clan; r.tag.setLabel(r.name, r.lv, r.clan); }
+        break;
+      }
+      case 'clanupd':
+        this.h.onClanUpdate();
+        break;
       case 'env':
         this.h.onEnv(m);
         break;
@@ -214,7 +237,7 @@ export class Net {
       case 'hit': {
         // we got headbutted
         const r = this.remotes.get(m.from);
-        this.h.onHit(r || null, m.dx, m.dz, m.p ?? 1);
+        this.h.onHit(r || null, m.dx, m.dz, m.p ?? 1, m.dmg || 0, m.hp);
         break;
       }
       case 'hitfx': {
