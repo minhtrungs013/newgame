@@ -77,13 +77,13 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · 
 
 ## Máu, cá sấu và cái chết
 
-- **Máu** giảm dần khi No bụng hoặc Nước về 0 (cả hai cùng hết thì giảm gấp đôi, khoảng 45 giây là chết); ăn uống đủ thì máu tự hồi. Máu thấp thì viền màn hình nhấp nháy đỏ.
+- **Máu** giảm dần khi No bụng hoặc Nước về 0 (cả hai cùng hết thì giảm gấp đôi, khoảng 45 giây là chết). No bụng tụt từ đầy xuống hết trong khoảng 13 phút đứng yên (5 phút nếu chạy liên tục), nước khoảng 10 phút (4 phút nếu chạy); ăn uống đủ thì máu tự hồi. Máu thấp thì viền màn hình nhấp nháy đỏ.
 - **Cá sấu** sống trong mọi hồ, bình thường chỉ lộ mắt và gờ lưng. Uống nước hay đứng sát bờ quá lâu thì nó bơi tới (có cảnh báo ⚠️ và tiếng gầm) rồi lao lên đớp. Thấy cảnh báo thì chạy xa khỏi bờ!
 - **Chết** (đói, khát hoặc bị cá sấu đớp) thì hiện màn hình kết thúc; bấm **Chơi lại** để bắt đầu lại từ bê con ở đồng cỏ xuất phát (giữ tên và ngoại hình).
 
 ## Level
 
-Bò có **level 0 → 30**. Gặm cỏ (giữ E) được 2 XP/giây, uống nước 0,5 XP/giây; đủ XP thì lên cấp và bò to thêm (Lv 0–9 Bê con, 10–19 Bò tơ, 20–30 Bò trưởng thành, cỡ tối đa theo "Cỡ khi lớn"). Đói hoặc khát thì mất XP và có thể tụt cấp. Server giới hạn tốc độ nhận XP nên không gian lận được.
+Bò có **level 0 → 30**. Gặm cỏ (giữ E) được 1 XP/giây, uống nước 0,25 XP/giây (Lv 1 ≈ 40 giây, Lv 10 ≈ 13 phút, Lv 30 ≈ 78 phút gặm cỏ); đủ XP thì lên cấp và bò to thêm (Lv 0–9 Bê con, 10–19 Bò tơ, 20–30 Bò trưởng thành, cỡ tối đa theo "Cỡ khi lớn"). Đói hoặc khát thì mất XP và có thể tụt cấp. Server giới hạn tốc độ nhận XP nên không gian lận được.
 
 ## Tài khoản & lưu tiến trình
 

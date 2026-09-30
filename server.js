@@ -22,12 +22,12 @@ const HORNS = ['none', 'short', 'long'];
 const ACCESSORIES = ['none', 'bell', 'hat', 'flowers', 'scarf'];
 const HEX = /^#[0-9a-f]{6}$/i;
 const WEATHERS = ['clear', 'cloudy', 'rain', 'fog'];
-// levels 0..30 from XP (must match js/levels.js); XP comes from grazing (2/s) / drinking
+// levels 0..30 from XP (must match js/levels.js); XP comes from grazing (1/s) / drinking
 const LEVEL_MAX = 30;
-const xpForLevel = (l) => 20 * l + 2 * l * (l - 1);
+const xpForLevel = (l) => 40 * l + 4 * l * (l - 1);
 const XP_MAX = xpForLevel(LEVEL_MAX);
 const levelOf = (xp) => { let l = 0; while (l < LEVEL_MAX && xp >= xpForLevel(l + 1)) l++; return l; };
-const MAX_XP_PER_SEC = 2.6; // a little above the client's best rate, to absorb lag
+const MAX_XP_PER_SEC = 1.4; // a little above the client's best rate (1/s), to absorb lag
 const CALF_SIZE = 0.5;
 
 // ---------- accounts & saved progress ----------

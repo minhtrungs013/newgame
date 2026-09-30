@@ -18,9 +18,9 @@ const $ = (id) => document.getElementById(id);
 
 // Levels 0..30: grazing (and a little drinking) earns XP; each level makes the cow bigger.
 // Hunger and thirst cost XP (you can drop levels). server.js caps how fast XP can grow.
-const XP_GRAZE = 2;      // per second of eating grass
-const XP_DRINK = 0.5;    // per second of drinking
-const XP_HUNGER = 1.5;   // lost per second for each unmet need
+const XP_GRAZE = 1;      // per second of eating grass (Lv 30 takes ~78 min of grazing)
+const XP_DRINK = 0.25;   // per second of drinking
+const XP_HUNGER = 0.75;  // lost per second for each unmet need
 const dpr = window.devicePixelRatio || 1;
 const QUALITY = {
   low:    { blades: 45000,  patch: 64,  segs: 3, pr: Math.min(dpr, 1) * 0.75, shadows: false, shadowMap: 1024, flowers: 700,  rain: 1500 },
@@ -902,8 +902,9 @@ function updateCow(dt) {
     state.nearShore = near;
   }
   const rest = cow.isDown ? 0.4 : 1; // resting cows get hungry / thirsty more slowly
-  state.food = Math.max(0, state.food - dt * (0.004 + cow.speed * 0.0015) * rest);
-  state.water = Math.max(0, state.water - dt * (0.005 + cow.speed * 0.002) * rest);
+  // full -> empty: food ~13 min standing (~5 min running), water ~10 min (~4 min running)
+  state.food = Math.max(0, state.food - dt * (0.0013 + cow.speed * 0.0005) * rest);
+  state.water = Math.max(0, state.water - dt * (0.0016 + cow.speed * 0.0006) * rest);
   // thirsty: shrink too
   if (state.started && state.water <= 0.02) {
     setXp(state.xp - XP_HUNGER * dt);
