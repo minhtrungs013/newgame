@@ -216,6 +216,30 @@ export class AudioSys {
     return f;
   }
 
+  // lapping water with the tongue
+  slurp() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this.ctx.currentTime;
+    const f = this._noiseBurst(t, 'bandpass', 900, 3, 0.09, 0.12);
+    f.frequency.setValueAtTime(1400, t);
+    f.frequency.exponentialRampToValueAtTime(500, t + 0.1);
+    const o = this.ctx.createOscillator();
+    o.frequency.setValueAtTime(520, t);
+    o.frequency.exponentialRampToValueAtTime(260, t + 0.08);
+    const g = this.ctx.createGain();
+    this._env(g, t, 0.005, 0.03, 0.09);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t + 0.1);
+  }
+
+  // hoof splashing through shallow water
+  splash(vol = 1) {
+    if (!this.ctx || !this.enabled || vol <= 0.01) return;
+    const t = this.ctx.currentTime;
+    this._noiseBurst(t, 'bandpass', 1100 + Math.random() * 600, 0.9, 0.14 * vol, 0.25);
+    this._noiseBurst(t + 0.03, 'highpass', 2500, 0.7, 0.05 * vol, 0.18);
+  }
+
   // effort "huff" + grass swish when jumping
   jump(vol = 1) {
     if (!this.ctx || !this.enabled || vol <= 0.01) return;

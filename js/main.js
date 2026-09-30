@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { Terrain, heightAt } from './terrain.js';
+import { Terrain, heightAt, waterAt, pondsNear, fillPondUniforms } from './terrain.js';
+import { Water } from './water.js';
 import { Grass } from './grass.js';
 import { Cow, BUTT_HIT_AT } from './cow.js';
 import { Sky } from './sky.js';
@@ -55,9 +56,14 @@ const sky = new Sky(scene);
 const terrain = new Terrain(scene);
 const grass = new Grass(scene);
 const world = new World(scene);
+const water = new Water(scene);
 let cow = new Cow(scene);
 const audio = new AudioSys();
-const onStep = (sp) => audio.step(sp, env.weather.rain > 0.5);
+const onStep = (sp) => {
+  const w = waterAt(cow.pos.x, cow.pos.z);
+  if (w && w.depth > 0.05) audio.splash(Math.min(1, 0.5 + sp * 0.15));
+  else audio.step(sp, env.weather.rain > 0.5);
+};
 const onLand = (v) => { audio.land(v); state.shake = Math.max(state.shake, Math.min(0.2, v * 0.02)); };
 cow.onStep = onStep;
 cow.onLand = onLand;
@@ -140,6 +146,11 @@ const state = {
   age: 0,              // 0 calf .. 1 adult
   stage: 'Bê con',
   starvingWarned: false,
+  water: 0.7,          // 1 = not thirsty
+  thirstWarned: false,
+  canDrink: false,
+  drinking: false,
+  slurpTimer: 0,
   lightningTimer: 12,
   chewTimer: 0,
   shake: 0,            // camera shake amount
@@ -557,6 +568,7 @@ function updateCow(dt) {
   cow.speed += (targetSpeed - cow.speed) * Math.min(1, dt * accel);
 
   const vx = Math.sin(cow.heading) * cow.speed, vz = Math.cos(cow.heading) * cow.speed;
+  const prevX = cow.pos.x, prevZ = cow.pos.z;
   cow.pos.x += vx * dt; cow.pos.z += vz * dt;
 
   // jump arc + knockback slide
@@ -590,6 +602,13 @@ function updateCow(dt) {
       cow.pos.z = r.cow.pos.z + dz / d * rr;
     }
   }
+  // cows can wade in the shallows but not walk into deep water
+  const wet = waterAt(cow.pos.x, cow.pos.z);
+  if (wet && wet.depth > 0.65 * cow.size) {
+    const before = waterAt(prevX, prevZ);
+    // only block steps that go deeper, so a cow knocked in can still walk back out
+    if (!before || wet.depth > before.depth) { cow.pos.x = prevX; cow.pos.z = prevZ; cow.speed *= 0.5; cow.knock.set(0, 0); }
+  }
   state.distance += cow.speed * dt;
 
   // align to ground
@@ -604,21 +623,37 @@ function updateCow(dt) {
   cow.root.rotation.x += (-pitch - cow.root.rotation.x) * Math.min(1, dt * 6);
   cow.animate(dt, running);
 
-  // needs: hold E to keep grazing while standing still
+  // needs: hold E to eat grass - or to drink when the muzzle is over water
+  const reach = 1.5 * cow.size;
+  const wHead = waterAt(cow.pos.x + hx * reach, cow.pos.z + hz * reach);
+  const wHere = waterAt(cow.pos.x, cow.pos.z);
+  state.canDrink = !!((wHead && wHead.depth > 0.03) || (wHere && wHere.depth > 0.05));
   if (canControl && k.has('KeyE') && cow.speed < 0.6) cow.grazeTimer = Math.max(cow.grazeTimer, 0.3);
-  if (cow.graze > 0.8) {
+  state.drinking = state.canDrink && cow.graze > 0.8;
+  if (state.drinking) {
+    state.water = Math.min(1, state.water + dt * 0.15);
+    state.slurpTimer -= dt;
+    if (state.slurpTimer < 0) { state.slurpTimer = 0.38 + Math.random() * 0.12; audio.slurp(); }
+  } else if (cow.graze > 0.8 && !wHere) {
     state.food = Math.min(1, state.food + dt * 0.06);
-    if (state.food > 0.25) setAge(state.age + GROW_PER_SEC * dt); // eating grass makes the cow grow
+    // eating grass makes the cow grow - but only if it isn't parched
+    if (state.food > 0.25 && state.water > 0.15) setAge(state.age + GROW_PER_SEC * dt);
     state.chewTimer -= dt;
     if (state.chewTimer < 0) { state.chewTimer = 0.32 + Math.random() * 0.1; audio.chew(); }
   }
   state.food = Math.max(0, state.food - dt * (0.004 + cow.speed * 0.0015));
+  state.water = Math.max(0, state.water - dt * (0.005 + cow.speed * 0.002));
+  // thirsty: shrink too
+  if (state.started && state.water <= 0.02) {
+    setAge(state.age - STARVE_SHRINK * 0.7 * dt);
+    if (!state.thirstWarned) { state.thirstWarned = true; toast('Bò khát quá! Tìm hồ nước rồi giữ E để uống 💧'); }
+  } else if (state.water > 0.2) state.thirstWarned = false;
   // starving: the cow slowly gets thinner / smaller
   if (state.started && state.food <= 0.02) {
     setAge(state.age - STARVE_SHRINK * dt);
     if (!state.starvingWarned) { state.starvingWarned = true; toast('Bò đói quá, đang gầy đi… Giữ E để gặm cỏ!'); }
   } else if (state.food > 0.2) state.starvingWarned = false;
-  const targetHappy = 0.3 + state.food * 0.5 + (cow.speed > 0.5 ? 0.2 : 0.05) - env.weather.rain * 0.05;
+  const targetHappy = 0.2 + state.food * 0.35 + state.water * 0.3 + (cow.speed > 0.5 ? 0.15 : 0.05) - env.weather.rain * 0.05;
   state.happy += (targetHappy - state.happy) * dt * 0.05;
 }
 
@@ -705,6 +740,7 @@ function updateEnvironment(dt) {
   if (nearCows.length > MAX_COWS) {
     nearCows.sort((a, b) => a.pos.distanceToSquared(cow.pos) - b.pos.distanceToSquared(cow.pos));
   }
+  g.uCowCount.value = Math.min(nearCows.length, MAX_COWS);
   for (let i = 0; i < MAX_COWS; i++) {
     const c = nearCows[i];
     if (c) g.uCows.value[i].set(c.pos.x, c.pos.z, c.pos.x + sox, c.pos.z + soz);
@@ -719,7 +755,9 @@ function updateEnvironment(dt) {
   state.obstacleTimer -= dt;
   if (state.obstacleTimer < 0) {
     state.obstacleTimer = 0.3;
-    world.nearest(cow.pos.x, cow.pos.z, g.uObstacles.value);
+    const patchR = grass.uniforms.uPatch.value * 0.5;
+    g.uObstacleCount.value = world.nearest(cow.pos.x, cow.pos.z, g.uObstacles.value, patchR + 4);
+    g.uPondCount.value = fillPondUniforms(cow.pos.x, cow.pos.z, g.uPonds.value, g.uPondLevel.value, patchR + 4);
   }
 
   rain.update(dt, w.rain, w.wind, windDir);
@@ -744,7 +782,8 @@ function updateEnvironment(dt) {
   leaves.instanceMatrix.needsUpdate = true;
   leafMat.color.setHex(0xe0c050).multiplyScalar(0.6 + 0.4 * env.dayness);
 
-  world.animateTrees(state.time, w.wind);
+  world.setFrame(state.time, w.wind);
+  water.setFrame(state.time, env, w.rain);
 }
 
 // ---------- HUD ----------
@@ -758,6 +797,10 @@ function updateHud(dt) {
   $('bar-happy').style.width = `${Math.round(state.happy * 100)}%`;
   $('bar-food').style.width = `${Math.round(state.food * 100)}%`;
   $('bar-grow').style.width = `${Math.round(state.age * 100)}%`;
+  $('bar-water').style.width = `${Math.round(state.water * 100)}%`;
+  const prompt = state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
+  $('prompt').textContent = prompt;
+  $('prompt').classList.toggle('show', !!prompt && state.started);
   $('txt-stage').textContent = state.stage;
   const m = state.distance;
   $('txt-online').textContent = `${net.online} người`;
@@ -790,6 +833,11 @@ function drawMinimap() {
   mctx.clearRect(0, 0, W, W);
   mctx.save();
   mctx.beginPath(); mctx.arc(R, R, R - 1, 0, Math.PI * 2); mctx.clip();
+  mctx.fillStyle = 'rgba(90,150,210,0.55)';
+  for (const p of pondsNear(cow.pos.x, cow.pos.z, 1)) {
+    const [x, y] = toScreen(p.x - cow.pos.x, p.z - cow.pos.z);
+    mctx.beginPath(); mctx.arc(x, y, Math.max(3, p.R * 1.15 * sc), 0, Math.PI * 2); mctx.fill();
+  }
   mctx.fillStyle = 'rgba(160,170,150,0.45)';
   for (const c of world.colliders) {
     if (c.r < 0.5) continue;
@@ -837,6 +885,7 @@ function tick(dt) {
   updateCow(dt);
   terrain.update(cow.pos.x, cow.pos.z);
   world.update(cow.pos.x, cow.pos.z);
+  water.update(cow.pos.x, cow.pos.z);
   updateCamera(dt);
   updateEnvironment(dt);
   audio.update(dt, env, state.time);
@@ -848,4 +897,4 @@ function tick(dt) {
   updateHud(dt);
 }
 requestAnimationFrame(frame);
-window.__game = { state, cow, env, world, grass, net, customizer, tick };
+window.__game = { state, cow, env, world, grass, water, net, customizer, tick };

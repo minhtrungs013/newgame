@@ -68,7 +68,7 @@ body.cinematic .ui { opacity: 0; pointer-events: none; }
 #toast.show { opacity: 1; }
 
 #debug {
-  top: 366px; left: 14px; margin: 0; padding: 8px 10px;
+  top: 386px; left: 14px; margin: 0; padding: 8px 10px;
   font: 12px/1.45 Consolas, monospace; color: #b8f5a0;
   background: rgba(0,0,0,.55); border-radius: 6px; pointer-events: none;
 }
@@ -110,7 +110,7 @@ body.cinematic .letterbox { height: 9vh; }
 .dot.offline { background: #c95a4a; }
 
 #minimap {
-  top: 192px; left: 14px; width: 160px; height: 160px;
+  top: 212px; left: 14px; width: 160px; height: 160px;
   border-radius: 50%; border: 1px solid rgba(255,255,255,.12);
   background: rgba(20, 26, 18, .55); backdrop-filter: blur(4px);
   box-shadow: 0 2px 10px rgba(0,0,0,.3);
@@ -253,3 +253,13 @@ body.show-env .env-pill { display: flex; }
 }
 .start-card .cz-age button:hover { transform: none; }
 .start-card .cz-age button.sel { background: rgba(216,232,168,.25); border-color: #d8e8a8; color: #fff; }
+
+/* water / drinking */
+#bar-water { width: 70%; background: linear-gradient(90deg, #3a7ad8, #7ad0f0); }
+#prompt {
+  left: 50%; bottom: 70px; transform: translateX(-50%);
+  padding: 7px 16px; border-radius: 18px; font-size: 14px; font-weight: 500;
+  background: rgba(20, 40, 60, .65); border: 1px solid rgba(122, 208, 240, .35); color: #e6f6ff;
+  opacity: 0; pointer-events: none; transition: opacity .25s;
+}
+#prompt.show { opacity: 1; }

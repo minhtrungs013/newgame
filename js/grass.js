@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HEIGHT_GLSL } from './terrain.js';
+import { HEIGHT_GLSL, MAX_PONDS } from './terrain.js';
 
 export const MAX_OBSTACLES = 12;
 export const MAX_COWS = 8;
@@ -19,6 +19,11 @@ const commonUniforms = () => ({
   uAmbient: { value: new THREE.Color(0.4, 0.4, 0.4) },
   uWet: { value: 0 },
   uObstacles: { value: Array.from({ length: MAX_OBSTACLES }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  uPonds: { value: Array.from({ length: MAX_PONDS }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  uPondLevel: { value: new Array(MAX_PONDS).fill(-1e4) },
+  uPondCount: { value: 0 },
+  uObstacleCount: { value: 0 },
+  uCowCount: { value: 1 },
 });
 
 // Place a blade inside the wrapping patch so blades stay fixed in world space
@@ -28,11 +33,13 @@ vec2 wrapPos(vec2 off) {
   vec2 origin = uCenter - uPatch * 0.5;
   return origin + mod(off - origin, uPatch);
 }
+uniform int uObstacleCount;
 float obstacleMask(vec2 wp) {
   float m = 1.0;
   for (int i = 0; i < ${MAX_OBSTACLES}; i++) {
+    if (i >= uObstacleCount) break;
     vec4 o = uObstacles[i];
-    if (o.z > 0.0) m *= smoothstep(o.z * 0.75, o.z * 1.05, length(wp - o.xy));
+    m *= smoothstep(o.z * 0.75, o.z * 1.05, length(wp - o.xy));
   }
   return m;
 }
@@ -43,6 +50,7 @@ uniform float uTime, uPatch, uWind, uShadowStr, uWet;
 uniform vec2 uCenter, uWindDir;
 uniform vec3 uSunDir, uSunColor, uAmbient;
 uniform vec4 uCows[${MAX_COWS}];
+uniform int uCowCount;
 uniform vec4 uObstacles[${MAX_OBSTACLES}];
 attribute vec2 aOffset;
 attribute vec4 aParams; // angle, heightScale, widthScale, seed
@@ -58,6 +66,9 @@ void main() {
   float patchN = vnoise(wp * 0.07);
   float patchN2 = vnoise(wp * 0.23 + 17.0);
   fade *= obstacleMask(wp);
+  float ground = terrainH(wp);
+  float wl = waterLevel(wp);
+  fade *= smoothstep(wl + 0.05, wl + 0.3, ground); // nothing grows under water
 
   float t = position.y;
   float hgt = 0.62 * aParams.y * (0.55 + 0.75 * patchN) * fade;
@@ -77,6 +88,7 @@ void main() {
   // Grass gets pushed aside by every cow nearby, and darkened under their shadows.
   float shadow = 1.0;
   for (int i = 0; i < ${MAX_COWS}; i++) {
+    if (i >= uCowCount) break;
     vec4 c = uCows[i];
     vec2 toB = wp - c.xy;
     float cd = length(toB);
@@ -89,7 +101,7 @@ void main() {
   float curve = t * t;
   vec3 p;
   p.xz = wp + side * position.x * wid + bend * curve * hgt * 0.75;
-  p.y = terrainH(wp) - 0.05 + t * hgt / (1.0 + 0.45 * bl * bl * t);
+  p.y = ground - 0.05 + t * hgt / (1.0 + 0.45 * bl * bl * t);
 
   // Lighting (cheap, vertex-based)
   vec3 n = normalize(vec3(face.x * 0.7 + bend.x * 0.4, 0.9, face.y * 0.7 + bend.y * 0.4));
@@ -131,6 +143,7 @@ uniform float uTime, uPatch, uWind;
 uniform vec2 uCenter, uWindDir;
 uniform vec3 uSunColor, uAmbient;
 uniform vec4 uCows[${MAX_COWS}];
+uniform int uCowCount;
 uniform vec4 uObstacles[${MAX_OBSTACLES}];
 attribute vec2 aOffset;
 attribute vec3 aColor;
@@ -144,13 +157,16 @@ void main() {
   vec2 wp = wrapPos(aOffset);
   float dist = length(wp - uCenter) / (uPatch * 0.5);
   float fade = (1.0 - smoothstep(0.6, 0.95, dist)) * obstacleMask(wp);
+  float ground = terrainH(wp);
+  fade *= step(waterLevel(wp) + 0.15, ground);
   float gust = vnoise(wp * 0.045 - uWindDir * uTime * 0.9);
   vec2 sway = uWindDir * uWind * gust * 0.15;
   for (int i = 0; i < ${MAX_COWS}; i++) {
+    if (i >= uCowCount) break;
     vec2 toB = wp - uCows[i].xy; float cd = length(toB);
     sway += (toB / max(cd, 0.001)) * (1.0 - smoothstep(0.3, 1.2, cd)) * 0.3;
   }
-  vec3 p = vec3(wp.x + sway.x, terrainH(wp) + 0.42 * aSize * fade, wp.y + sway.y);
+  vec3 p = vec3(wp.x + sway.x, ground + 0.36 * aSize * fade, wp.y + sway.y);
   vec4 mvPosition = viewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   gl_PointSize = min(aSize * 55.0 / -mvPosition.z, 7.0) * fade;

@@ -62,8 +62,18 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 
 ## Điều khiển
 
-WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ · Q: kêu moo · Chuột: xoay camera · Lăn chuột: zoom ·
+WASD/mũi tên: đi · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Chuột: xoay camera · Lăn chuột: zoom ·
 Enter: chat · C: chế độ điện ảnh · F3: debug · Ctrl+K: hiện/ẩn chỉnh thời tiết & thời gian
+
+## Bản đồ
+
+Đồng cỏ vô tận với rừng cây (cây tán tròn, thông, bạch dương), bụi rậm, bụi hoa, đá, khúc gỗ đổ, hàng rào và **hồ nước** có lau sậy, lá súng. Luôn có một hồ gần chỗ xuất phát; minimap hiện các hồ màu xanh.
+
+## Ăn, uống
+
+- **Giữ E** trên cỏ để gặm cỏ (tăng No bụng), đứng sát mép hồ thì **giữ E để uống nước** (tăng Nước).
+- Bò lội được chỗ nước nông nhưng không đi xuống chỗ sâu.
+- Thiếu nước thì bò không lớn được và sẽ gầy đi.
 
 ## Lớn lên
 
