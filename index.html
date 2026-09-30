@@ -149,7 +149,10 @@
       <h2>Bò của bạn đã chết</h2>
       <p id="death-reason"></p>
       <div class="death-stats" id="death-stats"></div>
-      <button id="btn-respawn" type="button">Chơi lại (bê con mới)</button>
+      <div class="death-actions">
+        <button id="btn-respawn" type="button">Chơi lại (bê con mới)</button>
+        <button id="btn-recreate" type="button" class="secondary">Đổi nhân vật</button>
+      </div>
       <small>Nhấn Enter để chơi lại</small>
     </div>
   </div>
@@ -174,6 +177,26 @@
           <small class="cz-tip">Kéo để xoay · Bắt đầu là bê con, gặm cỏ để lớn</small>
         </div>
         <div class="cz-side">
+          <!-- account: log in to keep your cow between sessions -->
+          <div id="account">
+            <div id="acc-form">
+              <div class="acc-tabs">
+                <button type="button" data-tab="login" class="sel">Đăng nhập</button>
+                <button type="button" data-tab="register">Đăng ký</button>
+              </div>
+              <div class="acc-fields">
+                <input id="acc-user" type="text" maxlength="16" placeholder="Tên đăng nhập" autocomplete="username" />
+                <input id="acc-pass" type="password" maxlength="100" placeholder="Mật khẩu" autocomplete="current-password" />
+                <button id="acc-submit" type="button">Đăng nhập</button>
+              </div>
+              <div id="acc-msg"></div>
+              <small class="acc-hint">Đăng nhập để lưu level, máu, no bụng… Không đăng nhập = chơi khách (không lưu).</small>
+            </div>
+            <div id="acc-box" class="hidden">
+              <span>👤 <b id="acc-name"></b> · <span id="acc-level"></span></span>
+              <button id="acc-logout" type="button">Đăng xuất</button>
+            </div>
+          </div>
           <input id="inp-name" type="text" maxlength="16" placeholder="Tên con bò của bạn" autocomplete="off" />
           <div class="cz-options"></div>
         </div>

@@ -81,9 +81,35 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · 
 - **Cá sấu** sống trong mọi hồ, bình thường chỉ lộ mắt và gờ lưng. Uống nước hay đứng sát bờ quá lâu thì nó bơi tới (có cảnh báo ⚠️ và tiếng gầm) rồi lao lên đớp. Thấy cảnh báo thì chạy xa khỏi bờ!
 - **Chết** (đói, khát hoặc bị cá sấu đớp) thì hiện màn hình kết thúc; bấm **Chơi lại** để bắt đầu lại từ bê con ở đồng cỏ xuất phát (giữ tên và ngoại hình).
 
-## Lớn lên
+## Level
 
-Mỗi lần vào game bò là **bê con**. Giữ **E** để gặm cỏ: no bụng tăng và bò lớn dần (Bê con → Bò tơ → Bò trưởng thành), tối đa bằng "Cỡ khi lớn" đã chọn. Chỉ khi để bụng đói hoặc khát nước thì bò mới gầy/nhỏ lại (bị húc chỉ bị hất văng, không nhỏ đi). Bò to húc mạnh hơn. Server giới hạn tốc độ lớn nên không gian lận được.
+Bò có **level 0 → 30**. Gặm cỏ (giữ E) được 2 XP/giây, uống nước 0,5 XP/giây; đủ XP thì lên cấp và bò to thêm (Lv 0–9 Bê con, 10–19 Bò tơ, 20–30 Bò trưởng thành, cỡ tối đa theo "Cỡ khi lớn"). Đói hoặc khát thì mất XP và có thể tụt cấp. Server giới hạn tốc độ nhận XP nên không gian lận được.
+
+## Tài khoản & lưu tiến trình
+
+Ở màn hình đầu có thể **Đăng ký / Đăng nhập** (tên 3–16 ký tự không dấu, mật khẩu ≥ 6 ký tự) hoặc chơi khách (không lưu).
+Server lưu level, XP, no bụng, nước, máu, vị trí, tên và ngoại hình — lưu mỗi 20 giây và ngay khi thoát. Khi không chơi thì không có gì bị trừ; vào lại là tiếp tục.
+Chết thì tài khoản trở về bê con mới; nút **Đổi nhân vật** trên màn hình chết để tạo lại ngoại hình. Đăng nhập cùng tài khoản ở nơi khác sẽ ngắt kết nối nơi cũ.
+
+Mật khẩu được băm bằng scrypt (không lưu dạng chữ thường).
+
+### Nơi lưu dữ liệu
+
+- **MongoDB** (khi có biến `MONGODB_URI`): collection `kv` trong database `MONGODB_DB` (mặc định `newgame`). **Bắt buộc dùng trên Render**, vì bản miễn phí xoá ổ đĩa mỗi lần khởi động lại.
+- **Không có `MONGODB_URI`**: lưu vào file `data/store.json` (chơi local).
+
+**Chạy local với MongoDB**: tạo file `.env` (đã nằm trong `.gitignore`, không bao giờ commit):
+
+```
+MONGODB_URI=mongodb+srv://<user>:<mật khẩu>@<cluster>.mongodb.net/?appName=Cluster0
+MONGODB_DB=newgame
+```
+
+`start.bat` tự đọc `.env` (`node --env-file-if-exists=.env server.js`).
+
+**Trên Render**: Service → **Environment** → thêm `MONGODB_URI` và `MONGODB_DB` → Save.
+Trong MongoDB Atlas → **Network Access** phải cho phép `0.0.0.0/0` (Render không có IP cố định).
+Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
 
 ## Thông báo admin
 

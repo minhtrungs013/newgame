@@ -353,3 +353,35 @@ body.hide-tags #tags .nametag:not(.self) .name { display: none; }
 .death-card button:hover { background: #ffe07a; }
 .death-card small { display: block; margin-top: 12px; color: #9a8f8a; }
 #prompt.danger { background: rgba(120, 20, 20, .8); border-color: rgba(255, 120, 100, .6); color: #fff; font-weight: 700; }
+
+/* ---------- account box (start screen) ---------- */
+#account { background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.1); border-radius: 10px; padding: 10px 12px; }
+.acc-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.start-card .acc-tabs button {
+  font: inherit; font-size: 13px; font-weight: 600; padding: 5px 14px; border-radius: 14px; box-shadow: none;
+  background: transparent; color: #aab3a4; border: 1px solid transparent;
+}
+.start-card .acc-tabs button:hover { transform: none; color: #fff; }
+.start-card .acc-tabs button.sel { color: #fff; border-color: #d8e8a8; background: rgba(216,232,168,.15); }
+.acc-fields { display: flex; gap: 6px; flex-wrap: wrap; }
+.acc-fields input {
+  flex: 1 1 120px; min-width: 0; font: inherit; font-size: 14px; color: #fff; background: rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.18); border-radius: 8px; padding: 7px 10px; outline: none;
+}
+.acc-fields input:focus { border-color: #d8e8a8; }
+.start-card .acc-fields button, .start-card #acc-logout {
+  font: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 8px; box-shadow: none;
+}
+.start-card .acc-fields button:hover, .start-card #acc-logout:hover { transform: none; }
+#acc-msg { min-height: 16px; font-size: 12px; margin-top: 6px; color: #f0a090; }
+#acc-msg.ok { color: #a8e890; }
+.acc-hint { display: block; color: #8f978a; font-size: 11.5px; margin-top: 2px; }
+#acc-box { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 14px; color: #dfe4d8; }
+#acc-box.hidden, #acc-form.hidden { display: none; }
+.start-card #acc-logout { background: rgba(255,255,255,.1); color: #dfe4d8; }
+
+/* death screen: two buttons */
+.death-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.death-card button.secondary { background: rgba(255,255,255,.14); color: #fff; }
+.death-card button.secondary:hover { background: rgba(255,255,255,.22); }
+#bar-grow { background: linear-gradient(90deg, #8a6ae8, #d0a8ff); }

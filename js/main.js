@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Terrain, heightAt, waterAt, pondsNear, fillPondUniforms } from './terrain.js';
 import { Water } from './water.js';
 import { Crocs } from './crocs.js';
+import { LEVEL_MAX, XP_MAX, levelInfo, stageName } from './levels.js';
 import { Grass } from './grass.js';
 import { Cow, BUTT_HIT_AT } from './cow.js';
 import { Sky } from './sky.js';
@@ -15,12 +16,11 @@ import { WEATHERS } from './environment.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Growing up: every cow starts as a calf (age 0) and grows to adult (age 1) by grazing.
-// Only hunger and thirst make it shrink again. Server (server.js) enforces the max growth rate.
-const GROW_PER_SEC = 1 / 150;    // ~2.5 min of grazing from calf to adult
-const STARVE_SHRINK = 1 / 400;   // per second while starving
-const STAGES = [[0, 'Bê con'], [0.34, 'Bò tơ'], [0.75, 'Bò trưởng thành']];
-const stageOf = (a) => STAGES.reduce((cur, st) => (a >= st[0] ? st : cur), STAGES[0])[1];
+// Levels 0..30: grazing (and a little drinking) earns XP; each level makes the cow bigger.
+// Hunger and thirst cost XP (you can drop levels). server.js caps how fast XP can grow.
+const XP_GRAZE = 2;      // per second of eating grass
+const XP_DRINK = 0.5;    // per second of drinking
+const XP_HUNGER = 1.5;   // lost per second for each unmet need
 const dpr = window.devicePixelRatio || 1;
 const QUALITY = {
   low:    { blades: 45000,  patch: 64,  segs: 3, pr: Math.min(dpr, 1) * 0.75, shadows: false, shadowMap: 1024, flowers: 700,  rain: 1500 },
@@ -149,8 +149,9 @@ const state = {
   keys: new Set(),
   time: 0,
   happy: 0.6, food: 0.5, distance: 0,
-  age: 0,              // 0 calf .. 1 adult
-  stage: 'Bê con',
+  xp: 0,
+  level: 0,
+  age: 0,              // displayed body age (eases towards level / 30)
   starvingWarned: false,
   water: 0.7,          // 1 = not thirsty
   thirstWarned: false,
@@ -337,8 +338,77 @@ $('m-resume').addEventListener('click', () => toggleMenu(false));
 $('m-invite').addEventListener('click', () => { toggleMenu(false); openInvite(); });
 // clicking the dark backdrop also closes the menu
 $('menu').addEventListener('pointerdown', (e) => { if (e.target === $('menu')) toggleMenu(false); });
+// ---------- account (log in to keep your cow) ----------
+const account = { token: null, username: null };
+try { account.token = localStorage.getItem('cow.token'); } catch {}
+let accTab = 'login';
+function accMsg(text, ok = false) { $('acc-msg').textContent = text; $('acc-msg').classList.toggle('ok', ok); }
+function showAccount(profile) {
+  const logged = !!profile;
+  $('acc-form').classList.toggle('hidden', logged);
+  $('acc-box').classList.toggle('hidden', !logged);
+  if (logged) {
+    account.username = profile.username;
+    $('acc-name').textContent = profile.username;
+    $('acc-level').textContent = `Lv ${profile.level ?? 0}`;
+    if (profile.look) customizer.set(profile.look);
+    if (profile.name) $('inp-name').value = profile.name;
+    $('btn-start').textContent = `Tiếp tục chơi (Lv ${profile.level ?? 0})`;
+  } else {
+    account.username = null;
+    $('btn-start').textContent = 'Vào đồng cỏ (khách)';
+  }
+}
+async function api(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `Lỗi ${res.status}`);
+  return j;
+}
+for (const b of document.querySelectorAll('.acc-tabs button')) {
+  b.addEventListener('click', () => {
+    accTab = b.dataset.tab;
+    for (const o of document.querySelectorAll('.acc-tabs button')) o.classList.toggle('sel', o === b);
+    $('acc-submit').textContent = accTab === 'login' ? 'Đăng nhập' : 'Tạo tài khoản';
+    $('acc-pass').autocomplete = accTab === 'login' ? 'current-password' : 'new-password';
+    accMsg('');
+  });
+}
+async function submitAccount() {
+  const username = $('acc-user').value.trim(), password = $('acc-pass').value;
+  if (!username || !password) return accMsg('Nhập tên đăng nhập và mật khẩu.');
+  $('acc-submit').disabled = true;
+  try {
+    const r = await api(accTab === 'login' ? '/api/login' : '/api/register', { username, password });
+    account.token = r.token;
+    try { localStorage.setItem('cow.token', r.token); } catch {}
+    $('acc-pass').value = '';
+    showAccount(r);
+    accMsg(accTab === 'login' ? 'Đăng nhập thành công!' : 'Tạo tài khoản thành công!', true);
+  } catch (e) { accMsg(e.message); }
+  $('acc-submit').disabled = false;
+}
+$('acc-submit').addEventListener('click', submitAccount);
+$('acc-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAccount(); });
+$('acc-user').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('acc-pass').focus(); });
+$('acc-logout').addEventListener('click', async () => {
+  const token = account.token;
+  account.token = null;
+  try { localStorage.removeItem('cow.token'); } catch {}
+  showAccount(null);
+  if (token) api('/api/logout', { token }).catch(() => {});
+});
+
 // ---------- start screen ----------
 const customizer = new Customizer($('customizer'));
+showAccount(null);
+if (account.token) {
+  fetch('/api/me', { headers: { Authorization: `Bearer ${account.token}` } })
+    .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+    .then((p) => showAccount(p))
+    .catch(() => { account.token = null; try { localStorage.removeItem('cow.token'); } catch {} showAccount(null); });
+}
+try { if (sessionStorage.getItem('cow.recreate')) { sessionStorage.removeItem('cow.recreate'); accMsg('Bò cũ đã chết - hãy tạo con mới!', true); } } catch {}
 try { $('inp-name').value = localStorage.getItem('cow.name') || ''; } catch {}
 $('inp-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btn-start').click(); });
 $('btn-start').addEventListener('click', () => {
@@ -351,8 +421,7 @@ $('btn-start').addEventListener('click', () => {
   // rebuild the local cow with the chosen look
   const old = cow;
   cow = new Cow(scene, { look, seed, age: 0 });
-  state.age = 0;
-  state.stage = stageOf(0);
+  state.age = 0; state.level = 0; state.xp = 0;
   cow.onStep = onStep;
   cow.onLand = onLand;
   cow.pos.copy(old.pos); cow.heading = old.heading;
@@ -364,7 +433,8 @@ $('btn-start').addEventListener('click', () => {
   audio.setEnabled(audio.enabled);
   state.started = true;
   $('start').classList.add('gone');
-  net.connect(name, look);
+  net.connect(name, look, account.token);
+  if (!account.token) addChat('', 'Bạn đang chơi khách - tiến trình sẽ không được lưu. Đăng nhập ở màn hình đầu để lưu lại.', true);
   setTimeout(() => audio.moo(), 600);
 });
 
@@ -479,6 +549,11 @@ const net = new Net(scene, $('tags'), {
     $('net-text').textContent = s === 'online' ? 'Online' : s === 'connecting' ? 'Đang kết nối…' : 'Offline';
   },
   onWelcome(m) {
+    if (m.profile) {
+      setXp(m.profile.xp, true);
+      state.food = m.profile.food; state.water = m.profile.water; state.health = m.profile.health;
+      addChat('', `Chào mừng trở lại, ${m.profile.username}! Đã tải bò của bạn (Lv ${state.level}).`, true);
+    }
     cow.pos.set(m.x, heightAt(m.x, m.z), m.z);
     cow.heading = m.h;
     state.yaw = state.camYaw = m.h + Math.PI;
@@ -488,6 +563,7 @@ const net = new Net(scene, $('tags'), {
       : 'Đã vào đồng cỏ. Gửi địa chỉ server cho bạn bè để chơi chung!', true);
   },
   onSystem(text) { addChat('', text, true); },
+  onKicked(text) { addChat('', text || 'Bạn đã bị ngắt kết nối.', true); toast(text || 'Bạn đã bị ngắt kết nối.'); },
   // admin banner: a = { text, by } to show, null to hide; initial = state sent on join
   onAnnounce(a, initial) {
     const box = $('announce');
@@ -642,17 +718,15 @@ function checkButtHit() {
   }
 }
 
-function setAge(a) {
-  a = Math.min(1, Math.max(0, a));
-  if (Math.abs(a - state.age) < 1e-6) return;
-  const grew = a > state.age;
-  state.age = a;
-  cow.setAge(a);
-  const st = stageOf(a);
-  if (st !== state.stage) {
-    toast(grew ? `🎉 ${$('txt-name').textContent} đã lớn thành ${st}!` : `Bò đã nhỏ lại thành ${st}…`);
-    state.stage = st;
-  }
+function setXp(xp, quiet = false) {
+  state.xp = Math.min(XP_MAX, Math.max(0, xp));
+  const { level } = levelInfo(state.xp);
+  if (level === state.level) return;
+  const up = level > state.level;
+  state.level = level;
+  if (quiet) { state.age = level / LEVEL_MAX; cow.setAge(state.age); return; }
+  if (up) { toast(`⬆️ Lên cấp ${level}! ${level === 10 || level === 20 ? `Giờ đã là ${stageName(level)} 🎉` : ''}`); audio.chime(); }
+  else toast(`⬇️ Tụt xuống cấp ${level}… Hãy ăn uống đầy đủ!`);
 }
 
 const DEATH_TEXT = {
@@ -673,7 +747,7 @@ function killCow(reason) {
   const m = state.distance;
   $('death-icon').textContent = icon;
   $('death-reason').textContent = text;
-  $('death-stats').textContent = `Đã lớn tới: ${state.stage} (${Math.round(state.age * 100)}%) · Quãng đường: ${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km'}`;
+  $('death-stats').textContent = `Đạt tới: Lv ${state.level} · ${stageName(state.level)} · Quãng đường: ${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km'}`;
   setTimeout(() => { $('death').classList.remove('hidden'); state.deathShown = true; $('btn-respawn').focus(); }, 1800);
 }
 function respawn() {
@@ -682,7 +756,7 @@ function respawn() {
   state.dead = false; state.deathShown = false;
   cow.dead = false; cow.deadK = 0; cow.lie = 0; cow.knock.set(0, 0); cow.vy = 0; cow.air = 0;
   // brand new calf at the spawn meadow
-  state.age = 0; cow.setAge(0); state.stage = stageOf(0);
+  state.level = -1; setXp(0, true);
   state.food = 0.5; state.water = 0.7; state.health = 1; state.happy = 0.6; state.distance = 0;
   state.starvingWarned = false; state.thirstWarned = false;
   const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 6;
@@ -693,9 +767,13 @@ function respawn() {
   toast('Một chú bê con mới chào đời 🐮');
 }
 $('btn-respawn').addEventListener('click', () => respawn());
+// back to the character creator (the dead cow's account was already reset by the server)
+$('btn-recreate').addEventListener('click', () => { try { sessionStorage.setItem('cow.recreate', '1'); } catch {} location.reload(); });
 
 function updateCow(dt) {
   const k = state.keys;
+  const ageTarget = state.level / LEVEL_MAX;
+  if (Math.abs(ageTarget - state.age) > 1e-4) { state.age += (ageTarget - state.age) * Math.min(1, dt * 2.5); cow.setAge(state.age); }
   const f = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
   const r = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
@@ -785,12 +863,13 @@ function updateCow(dt) {
   state.drinking = state.canDrink && cow.graze > 0.8;
   if (state.drinking) {
     state.water = Math.min(1, state.water + dt * 0.15);
+    setXp(state.xp + XP_DRINK * dt);
     state.slurpTimer -= dt;
     if (state.slurpTimer < 0) { state.slurpTimer = 0.38 + Math.random() * 0.12; audio.slurp(); }
   } else if (cow.graze > 0.8 && !wHere) {
     state.food = Math.min(1, state.food + dt * 0.06);
-    // eating grass makes the cow grow - but only if it isn't parched
-    if (state.food > 0.25 && state.water > 0.15) setAge(state.age + GROW_PER_SEC * dt);
+    // eating grass earns XP - but only if the cow isn't parched
+    if (state.food > 0.25 && state.water > 0.15) setXp(state.xp + XP_GRAZE * dt);
     state.chewTimer -= dt;
     if (state.chewTimer < 0) { state.chewTimer = 0.32 + Math.random() * 0.1; audio.chew(); }
   }
@@ -811,12 +890,12 @@ function updateCow(dt) {
   state.water = Math.max(0, state.water - dt * (0.005 + cow.speed * 0.002) * rest);
   // thirsty: shrink too
   if (state.started && state.water <= 0.02) {
-    setAge(state.age - STARVE_SHRINK * 0.7 * dt);
+    setXp(state.xp - XP_HUNGER * dt);
     if (!state.thirstWarned) { state.thirstWarned = true; toast('Bò khát quá! Tìm hồ nước rồi giữ E để uống 💧'); }
   } else if (state.water > 0.2) state.thirstWarned = false;
   // starving: the cow slowly gets thinner / smaller
   if (state.started && state.food <= 0.02) {
-    setAge(state.age - STARVE_SHRINK * dt);
+    setXp(state.xp - XP_HUNGER * dt);
     if (!state.starvingWarned) { state.starvingWarned = true; toast('Bò đói quá, đang gầy đi… Giữ E để gặm cỏ!'); }
   } else if (state.food > 0.2) state.starvingWarned = false;
   // health: hunger and thirst each drain it; well fed & watered it recovers
@@ -969,7 +1048,9 @@ function updateHud(dt) {
   hudTimer = 0.2;
   $('bar-happy').style.width = `${Math.round(state.happy * 100)}%`;
   $('bar-food').style.width = `${Math.round(state.food * 100)}%`;
-  $('bar-grow').style.width = `${Math.round(state.age * 100)}%`;
+  const li = levelInfo(state.xp);
+  $('bar-grow').style.width = `${Math.round(li.frac * 100)}%`;
+  $('bar-grow').parentElement.title = state.level >= LEVEL_MAX ? 'Cấp tối đa' : `${Math.floor(li.into)} / ${li.need} XP`;
   $('bar-water').style.width = `${Math.round(state.water * 100)}%`;
   $('bar-health').style.width = `${Math.round(state.health * 100)}%`;
   const low = state.started && !state.dead && state.health < 0.35;
@@ -982,7 +1063,7 @@ function updateHud(dt) {
     : state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
   $('prompt').textContent = prompt;
   $('prompt').classList.toggle('show', !!prompt && state.started);
-  $('txt-stage').textContent = state.stage;
+  $('txt-stage').textContent = `Lv ${state.level} · ${stageName(state.level)}`;
   const m = state.distance;
   $('txt-online').textContent = `${net.online} người`;
   $('txt-dist').textContent = m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
@@ -1076,7 +1157,7 @@ function tick(dt) {
   updateCamera(dt);
   updateEnvironment(dt);
   audio.update(dt, env, state.time);
-  net.update(dt, cow, camera);
+  net.update(dt, cow, camera, { xp: state.xp, food: state.food, water: state.water, health: state.health });
   selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + (2.0 - 0.5 * cow.lie) * cow.size, cow.pos.z);
   selfTag.update(dt, selfTagPos, camera);
   renderer.render(scene, camera);

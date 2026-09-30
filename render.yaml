@@ -5,7 +5,7 @@ services:
     runtime: node
     plan: free
     region: singapore
-    buildCommand: "echo no build needed"
+    buildCommand: npm install --omit=dev
     startCommand: node server.js
     healthCheckPath: /api/info
     autoDeploy: true

@@ -14,8 +14,14 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if not exist node_modules (
+  echo Dang cai thu vien lan dau...
+  call npm install --omit=dev
+)
+
 echo Dang bat server game...
-start "Cow Meadow - Server" cmd /k node server.js
+rem .env (neu co) chua MONGODB_URI de luu tai khoan len MongoDB
+start "Cow Meadow - Server" cmd /k node --env-file-if-exists=.env server.js
 timeout /t 2 /nobreak >nul
 
 where ngrok >nul 2>nul

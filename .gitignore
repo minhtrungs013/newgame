@@ -2,3 +2,6 @@ node_modules/
 ngrok-domain.txt
 .claude/
 *.log
+data/
+.env
+.env.*

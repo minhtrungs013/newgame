@@ -61,6 +61,7 @@ class Remote {
     this.cow.lying = !!p.l;
     if (p.l) this.cow.lie = 1;
     this.tag = new NameTag(tags, p.name);
+    this.lv = -1;
     this.labelPos = new THREE.Vector3();
   }
   update(dt, camera) {
@@ -77,6 +78,9 @@ class Remote {
     c.speed += (t.sp - c.speed) * Math.min(1, dt * 8);
     c.grazeTimer = t.g > 0.5 ? 0.5 : 0;
     c.lying = t.l > 0.5;
+    // name tag shows the level (server sends age = level / 30)
+    const lv = Math.round(t.a * 30);
+    if (lv !== this.lv) { this.lv = lv; this.tag.label.textContent = `${this.name} · Lv${lv}`; }
     // grow / shrink smoothly towards the age the owner reports
     if (Math.abs(t.a - c.age) > 0.001) c.setAge(c.age + (t.a - c.age) * Math.min(1, dt * 3));
     c.updatePhysics(dt); // jump arcs are simulated locally from 'act' events
@@ -113,9 +117,10 @@ export class Net {
 
   get online() { return this.connected ? this.remotes.size + 1 : 1; }
 
-  connect(name, look) {
+  connect(name, look, token = null) {
     this.name = name;
     this.look = look;
+    this.token = token; // logged-in players get their saved cow back
     if (location.protocol === 'file:') { this.h.onStatus('offline'); return; }
     this._open();
   }
@@ -129,7 +134,7 @@ export class Net {
     this.h.onStatus('connecting');
     ws.onopen = () => {
       this.retryDelay = 1500;
-      ws.send(JSON.stringify({ t: 'hello', name: this.name, look: this.look }));
+      ws.send(JSON.stringify({ t: 'hello', name: this.name, look: this.look, token: this.token || undefined }));
     };
     ws.onmessage = (e) => {
       let m;
@@ -143,6 +148,7 @@ export class Net {
       for (const r of this.remotes.values()) r.dispose();
       this.remotes.clear();
       this.h.onStatus('offline');
+      if (this.kicked) return; // logged in somewhere else: don't fight over the account
       if (was) this.h.onSystem('Mất kết nối server, đang thử lại…');
       this._retry();
     };
@@ -224,13 +230,18 @@ export class Net {
       case 'sys':
         this.h.onSystem(m.text);
         break;
+      case 'kicked':
+        this.kicked = true;
+        this.h.onKicked(m.text);
+        break;
       case 'full':
         this.h.onSystem('Server đã đầy người chơi.');
         break;
     }
   }
 
-  update(dt, cow, camera) {
+  // stats: { xp, food, water, health } - saved to the account by the server
+  update(dt, cow, camera, stats = {}) {
     for (const r of this.remotes.values()) r.update(dt, camera);
     if (!this.connected) return;
     this.sendTimer -= dt;
@@ -240,9 +251,10 @@ export class Net {
       t: 's',
       x: +cow.pos.x.toFixed(2), z: +cow.pos.z.toFixed(2),
       h: +(((cow.heading % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)).toFixed(3),
-      sp: +cow.speed.toFixed(2), g: cow.graze > 0.5 ? 1 : 0, a: +cow.age.toFixed(3), l: cow.lying ? 1 : 0,
+      sp: +cow.speed.toFixed(2), g: cow.graze > 0.5 ? 1 : 0, l: cow.lying ? 1 : 0,
+      xp: +(stats.xp || 0).toFixed(1), f: +(stats.food ?? 0.5).toFixed(3), w: +(stats.water ?? 0.7).toFixed(3), hp: +(stats.health ?? 1).toFixed(3),
     };
-    const key = `${msg.x},${msg.z},${msg.h},${msg.sp},${msg.g},${msg.a},${msg.l}`;
+    const key = `${msg.x},${msg.z},${msg.h},${msg.sp},${msg.g},${msg.l},${msg.xp},${msg.f.toFixed(2)},${msg.w.toFixed(2)},${msg.hp.toFixed(2)}`;
     if (key === this.lastSent) return;
     this.lastSent = key;
     this.send(msg);
