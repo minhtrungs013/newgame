@@ -216,6 +216,20 @@ export class AudioSys {
     return f;
   }
 
+  // two-tone chime for admin announcements
+  chime() {
+    if (!this.ctx || !this.enabled) return;
+    const t0 = this.ctx.currentTime;
+    for (const [f, dt] of [[880, 0], [1320, 0.16]]) {
+      const t = t0 + dt;
+      const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = this.ctx.createGain();
+      this._env(g, t, 0.01, 0.22, 0.9);
+      o.connect(g).connect(this.master);
+      o.start(t); o.stop(t + 0.95);
+    }
+  }
+
   // lapping water with the tongue
   slurp() {
     if (!this.ctx || !this.enabled) return;

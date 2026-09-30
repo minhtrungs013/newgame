@@ -78,3 +78,19 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Ctrl+K: hiện/ẩn 
 ## Lớn lên
 
 Mỗi lần vào game bò là **bê con**. Giữ **E** để gặm cỏ: no bụng tăng và bò lớn dần (Bê con → Bò tơ → Bò trưởng thành), tối đa bằng "Cỡ khi lớn" đã chọn. Để bụng đói thì bò gầy/nhỏ lại, bị húc cũng nhỏ đi. Bò to húc mạnh hơn. Server giới hạn tốc độ lớn và tự trừ kích thước khi bị húc nên không gian lận được.
+
+## Thông báo admin
+
+Gõ trong ô chat (Enter):
+
+| Lệnh | Tác dụng |
+|---|---|
+| `/ONADMIN <nội dung>` | Hiện khung thông báo lớn cho **tất cả** người chơi (kể cả người vào sau) |
+| `/OFFADMIN` | Tắt thông báo |
+| `/ADMIN <mã>` | Đăng nhập admin (chỉ cần khi server có đặt `ADMIN_KEY`) |
+
+Các lệnh này không hiện ra thành tin nhắn chat.
+
+**Nên đặt mã admin**: code công khai trên GitHub nên ai cũng biết lệnh `/ONADMIN`. Đặt biến môi trường
+`ADMIN_KEY` trên server (Render → service → **Environment** → Add `ADMIN_KEY` = mã bí mật) thì chỉ ai gõ
+đúng `/ADMIN <mã>` mới bật/tắt được thông báo. Chạy local: `set ADMIN_KEY=ma-bi-mat && node server.js`.

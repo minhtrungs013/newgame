@@ -11,6 +11,10 @@ const PORT = process.env.PORT || 5173;
 const ROOT = __dirname;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp' };
 const MAX_PLAYERS = 32;
+// Admin announcements (/ONADMIN <text>, /OFFADMIN). If ADMIN_KEY is set, a player must
+// first unlock admin commands with /ADMIN <key>; otherwise anyone may use them.
+const ADMIN_KEY = process.env.ADMIN_KEY || '';
+let announcement = null; // { text, by }
 const COATS = ['holstein', 'brown', 'jersey', 'black'];
 // cow appearance options (must match js/cow.js)
 const PATTERNS = ['none', 'few', 'many', 'patches'];
@@ -225,7 +229,7 @@ function handle(p, text) {
       p.x = Math.cos(a) * r; p.z = Math.sin(a) * r; p.h = Math.random() * Math.PI * 2;
       p.ready = true;
       p.conn.send({
-        t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(),
+        t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(), announce: announcement,
         players: [...players.values()].filter(o => o.ready && o !== p).map(publicInfo),
       });
       broadcast({ t: 'join', p: publicInfo(p) }, p);
@@ -284,6 +288,9 @@ function handle(p, text) {
       p.lastChat = now;
       if (p.chatBudget < 1) return;
       p.chatBudget -= 1;
+      // admin commands are handled here and never shown as chat
+      const cmd = String(m.text ?? '').trim().match(/^\/(ONADMIN|OFFADMIN|ADMIN)(?:\s+([\s\S]*))?$/i);
+      if (cmd) { adminCommand(p, cmd[1].toUpperCase(), cmd[2] || ''); break; }
       const txt = clean(m.text, 120);
       if (txt) broadcast({ t: 'chat', id: p.id, name: p.name, text: txt });
       break;
@@ -299,6 +306,35 @@ function handle(p, text) {
       broadcast({ ...envMsg(), by: p.name });
       break;
     }
+  }
+}
+
+function sameKey(a, b) {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
+function adminCommand(p, cmd, arg) {
+  const reply = (text) => p.conn.send({ t: 'sys', text });
+  if (cmd === 'ADMIN') {
+    if (!ADMIN_KEY) return reply('Server chưa đặt ADMIN_KEY nên không cần đăng nhập admin.');
+    if (p.adminFails >= 5) return reply('Sai mã quá nhiều lần.');
+    if (sameKey(arg.trim(), ADMIN_KEY)) { p.admin = true; return reply('Đã đăng nhập admin ✔'); }
+    p.adminFails = (p.adminFails || 0) + 1;
+    return reply('Sai mã admin.');
+  }
+  if (ADMIN_KEY && !p.admin) return reply('Bạn cần đăng nhập trước: /ADMIN <mã>');
+  if (cmd === 'ONADMIN') {
+    const text = clean(arg, 200);
+    if (!text) return reply('Cú pháp: /ONADMIN <nội dung thông báo>');
+    announcement = { text, by: p.name };
+    broadcast({ t: 'announce', ...announcement });
+    console.log(`! announcement by ${p.name}: ${text}`);
+  } else if (cmd === 'OFFADMIN') {
+    if (!announcement) return reply('Hiện không có thông báo nào.');
+    announcement = null;
+    broadcast({ t: 'announce', text: null, by: p.name });
+    console.log(`! announcement cleared by ${p.name}`);
   }
 }
 

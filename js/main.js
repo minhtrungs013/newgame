@@ -360,6 +360,7 @@ chatInput.addEventListener('keydown', (e) => {
   const text = chatInput.value.trim();
   if (text) {
     if (net.connected) net.send({ t: 'chat', text });
+    else if (/^\/(ONADMIN|OFFADMIN|ADMIN)\b/i.test(text)) addChat('', 'Lệnh admin cần kết nối tới server.', true);
     else { addChat($('txt-name').textContent, text); selfTag.say(text); }
   }
   closeChat();
@@ -408,6 +409,22 @@ const net = new Net(scene, $('tags'), {
       : 'Đã vào đồng cỏ. Gửi địa chỉ server cho bạn bè để chơi chung!', true);
   },
   onSystem(text) { addChat('', text, true); },
+  // admin banner: a = { text, by } to show, null to hide; initial = state sent on join
+  onAnnounce(a, initial) {
+    const box = $('announce');
+    const wasShown = !box.classList.contains('hidden');
+    if (!a) {
+      box.classList.add('hidden');
+      if (wasShown && !initial) addChat('', 'Thông báo đã được tắt.', true);
+      return;
+    }
+    $('announce-text').textContent = a.text;
+    $('announce-by').textContent = a.by ? `— ${a.by}` : '';
+    // restart the pop-in animation for a new message
+    box.classList.add('hidden'); void box.offsetWidth; box.classList.remove('hidden');
+    audio.chime();
+    if (!initial) addChat('', `📢 Thông báo: ${a.text}`, true);
+  },
   onChat(name, text, remote, isSelf) {
     addChat(name, text);
     if (isSelf) selfTag.say(text);

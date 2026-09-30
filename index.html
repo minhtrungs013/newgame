@@ -75,7 +75,7 @@
   <!-- Chat -->
   <div id="chat" class="ui">
     <div id="chat-log"></div>
-    <input id="chat-input" type="text" maxlength="120" placeholder="Nhập tin nhắn… (Enter gửi, Esc đóng)" autocomplete="off" />
+    <input id="chat-input" type="text" maxlength="220" placeholder="Nhập tin nhắn… (Enter gửi, Esc đóng)" autocomplete="off" />
   </div>
   <div id="tags"></div>
 
@@ -95,6 +95,12 @@
     <b>F3</b> — Debug
   </div>
 
+  <!-- Admin announcement banner (/ONADMIN ... / /OFFADMIN) -->
+  <div id="announce" class="hidden" role="alert">
+    <div class="an-head">📢 THÔNG BÁO</div>
+    <div class="an-text" id="announce-text"></div>
+    <div class="an-by" id="announce-by"></div>
+  </div>
   <div id="toast" class="ui"></div>
   <div id="prompt" class="ui"></div>
   <pre id="debug" class="ui hidden"></pre>

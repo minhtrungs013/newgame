@@ -170,6 +170,7 @@ export class Net {
         for (const p of m.players) this._add(p);
         this.h.onWelcome(m);
         this.h.onStatus('online');
+        this.h.onAnnounce(m.announce || null, true);
         break;
       case 'join':
         this._add(m.p);
@@ -216,6 +217,13 @@ export class Net {
         if (b) this.h.onRemoteHit(a || null, b);
         break;
       }
+      case 'announce':
+        // admin banner shown to everyone (text null = removed)
+        this.h.onAnnounce(m.text ? m : null, false);
+        break;
+      case 'sys':
+        this.h.onSystem(m.text);
+        break;
       case 'full':
         this.h.onSystem('Server đã đầy người chơi.');
         break;
