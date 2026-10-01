@@ -278,6 +278,10 @@ export class Net {
       case 'eco': case 'milked': case 'sold': case 'bought': case 'deathloss': case 'price':
         this.h.onEconomy(m);
         break;
+      // the server didn't accept our position / stats (too fast, impossible numbers): take its values
+      case 'pos': case 'stats':
+        this.h.onCorrect(m);
+        break;
       case 'sys':
         this.h.onSystem(m.text);
         break;

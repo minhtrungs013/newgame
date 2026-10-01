@@ -87,6 +87,7 @@ async function handleAdmin(action, auth, body, game) {
             username: pl.username, name: pl.name, level: levelOf(xp), online: !!l,
             coins: l ? l.coins : pl.coins || 0, udder: l ? l.udder : pl.udder || 0, bottles: l ? l.bottles : pl.bottles || 0,
             items: (l ? l.inventory : pl.inventory || []).reduce((n, x) => n + (x.qty || 0), 0), updatedAt: pl.updatedAt,
+            flags: l ? l.flags : 0, // suspicious actions this session
           };
         }),
       });

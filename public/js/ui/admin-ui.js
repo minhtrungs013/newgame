@@ -139,12 +139,13 @@ export class AdminPanel {
     const { players } = await this.api('players');
     const table = el('table', 'ad-table');
     const hr = el('tr');
-    for (const h of ['Người chơi', 'Lv', '🪙 Xu', '🥛 Bầu vú', '🍼 Bình', '🎒 Đồ', 'Online']) hr.append(el('th', '', h));
+    for (const h of ['Người chơi', 'Lv', '🪙 Xu', '🥛 Bầu vú', '🍼 Bình', '🎒 Đồ', 'Online', '⚠️ Nghi gian lận']) hr.append(el('th', '', h));
     table.append(hr);
     for (const p of players) {
       const tr = el('tr');
       tr.append(el('td', '', p.name === p.username ? p.username : `${p.name} (${p.username})`), el('td', '', p.level), el('td', '', fmt(p.coins)),
-        el('td', '', `${fmt(p.udder)} L`), el('td', '', `${fmt(p.bottles)} L`), el('td', '', p.items), el('td', '', p.online ? '🟢' : ''));
+        el('td', '', `${fmt(p.udder)} L`), el('td', '', `${fmt(p.bottles)} L`), el('td', '', p.items), el('td', '', p.online ? '🟢' : ''),
+        el('td', p.flags ? 'ad-minus' : '', p.flags ? `${p.flags} lần` : ''));
       table.append(tr);
     }
     body.replaceChildren(table);

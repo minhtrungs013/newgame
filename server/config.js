@@ -30,9 +30,16 @@ const levelOf = (xp) => { let l = 0; while (l < LEVEL_MAX && xp >= xpForLevel(l 
 // XP in a small "bank" that the reported XP can draw from.
 const XP_GRAZE = 1, XP_DRINK = 0.25;          // XP per second of eating / drinking
 const GRAZE_RATE = 0.06, DRINK_RATE = 0.15;   // food / water gained per second
-const RISE_SLACK = 1.5;                       // network jitter on how fast food / water may rise
+const RISE_SLACK = 1.25;                      // network jitter on how fast food / water may rise
 const XP_SLACK = 1.15;
 const XP_BANK_MAX = 40;
+// food / water can't drop faster than hunger / thirst do (running in winter ~0.005 / s), so a
+// modified client can't "empty and refill" them over and over to farm XP
+const FOOD_DROP_MAX = 0.0055, WATER_DROP_MAX = 0.0055;
+// movement: running is 5.2 m/s; knockbacks / headbutt lunges add short bursts
+const MOVE_SPEED_MAX = 7;     // m/s the position budget refills at
+const MOVE_BURST = 12;        // m of budget that can be saved up
+const CORRECT_AFTER = 3;      // m off before the client is pulled back to the server's position
 
 // combat
 const BUTT_DAMAGE = 0.12;          // health lost per headbutt from a non-teammate (x power 0.6..1.8)
@@ -79,5 +86,6 @@ module.exports = {
   COATS, PATTERNS, HORNS, ACCESSORIES, HEX, CALF_SIZE,
   LEVEL_MAX, XP_MAX, levelOf,
   XP_GRAZE, XP_DRINK, GRAZE_RATE, DRINK_RATE, RISE_SLACK, XP_SLACK, XP_BANK_MAX,
+  FOOD_DROP_MAX, WATER_DROP_MAX, MOVE_SPEED_MAX, MOVE_BURST, CORRECT_AFTER,
   BUTT_DAMAGE, MAX_HEAL_PER_SEC,
 };

@@ -745,6 +745,11 @@ const net = new Net(scene, $('tags'), {
   },
   onClanUpdate() { if (panel.open === 'clan') clanPanel.refresh(); },
   onEconomy(m) { handleEconomy(m); },
+  // the server is authoritative for position, food, water and XP
+  onCorrect(m) {
+    if (m.t === 'pos') { cow.pos.x = m.x; cow.pos.z = m.z; cow.speed = 0; cow.knock.set(0, 0); }
+    else { state.food = m.f; state.water = m.w; setXp(m.xp, true); }
+  },
   onKicked(text) { addChat('', text || 'Bạn đã bị ngắt kết nối.', true); toast(text || 'Bạn đã bị ngắt kết nối.'); },
   // admin banner: a = { text, by } to show, null to hide; initial = state sent on join
   onAnnounce(a, initial) {

@@ -182,6 +182,13 @@ Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
 
 Mọi thứ liên quan tới xu (sữa trong bầu vú, vắt, bán, mua, mất khi chết) do server tính và kiểm tra vị trí — client không tự cộng được. Chơi khách không vắt / bán / mua được.
 
+**Chống gian lận** (server không tin số liệu client gửi lên):
+- **Vị trí:** bò không di chuyển nhanh hơn ~7 m/s được (chạy thật 5,2 m/s; có dư cho bị húc văng / mạng giật). Dịch chuyển tức thời bị kéo về vị trí server → không teleport vào chuồng hay ra chợ để vắt / bán.
+- **No & nước:** chỉ tăng khi bò đang cúi đầu ăn / uống (đứng yên), không tăng nhanh hơn tốc độ ăn thật, và **không tụt nhanh hơn tốc độ đói thật** → không "xả rồi đổ đầy" để cày XP.
+- **XP / level:** chỉ tăng theo lượng cỏ / nước thực sự ăn được. Client báo sai thì server gửi lại số đúng.
+- **Sữa & xu:** server tự tính sữa trong bầu vú, vắt / bán / mua chỉ được ở đúng chỗ (theo vị trí server), có khoá chống mua trùng, mỗi giao dịch đều ghi vào `transactions`.
+- Hành vi bất thường được ghi log server (`! suspicious …`) và hiện ở cột **⚠️ Nghi gian lận** trong Esc → 🛠️ Quản trị → 👥 Người chơi.
+
 **Admin:** đặt biến môi trường `ADMIN_USERS` (danh sách tên đăng nhập, cách nhau dấu phẩy, ví dụ `ADMIN_USERS=trungdo`) trên Render hoặc trong `.env`; hoặc đặt `role: "admin"` cho tài khoản trong collection `users`. Admin thấy tab **Esc → 🛠️ Quản trị**: giá sữa, thêm / sửa / ẩn / xoá vật phẩm (icon, tên, mô tả, giá, số lượng, thời gian bán), lịch sử giao dịch, xu & túi đồ của người chơi. Admin tài khoản cũng dùng được /ONADMIN mà không cần mã.
 
 Dữ liệu: `players` (`coins`, `udder`, `bottles`, `inventory`), `shop_items`, `transactions` (bán sữa, mua đồ, rớt xu khi chết), `settings` (giá sữa).

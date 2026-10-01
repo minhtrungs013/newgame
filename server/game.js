@@ -4,6 +4,7 @@ const { getDb } = require('./db');
 const {
   MAX_PLAYERS, ADMIN_KEY, COATS, LEVEL_MAX, XP_MAX, levelOf, CALF_SIZE,
   XP_GRAZE, XP_DRINK, GRAZE_RATE, DRINK_RATE, RISE_SLACK, XP_SLACK, XP_BANK_MAX, BUTT_DAMAGE, MAX_HEAL_PER_SEC,
+  FOOD_DROP_MAX, WATER_DROP_MAX, MOVE_SPEED_MAX, MOVE_BURST, CORRECT_AFTER,
 } = require('./config');
 const { num, clean, cleanLook, sameKey } = require('./util');
 const { Conn } = require('./websocket');
@@ -105,6 +106,7 @@ async function hello(p, m) {
   p.age = levelOf(p.xp) / LEVEL_MAX;
   p.xpT = Date.now();
   p.hpT = Date.now();
+  p.moveT = Date.now(); p.moveBudget = MOVE_BURST;
   p.ready = true;
   p.conn.send({
     t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(), announce: announcement, profile, clan: p.clan || null,
@@ -160,14 +162,39 @@ function handle(p, text) {
     }
     case 's': {
       if (!p.ready) return;
-      p.x = num(m.x, -1e6, 1e6, p.x); p.z = num(m.z, -1e6, 1e6, p.z);
-      p.h = num(m.h, -1e4, 1e4, p.h); p.sp = num(m.sp, -3, 10); p.g = num(m.g, 0, 1); p.l = m.l ? 1 : 0;
-      // XP is reported by the client but can't grow faster than grazing allows
       const now = Date.now();
+      // position: a cow can only move so fast - no teleporting into the barn / to the market
+      const mdt = Math.min(10, (now - (p.moveT || now)) / 1000);
+      p.moveT = now;
+      p.moveBudget = Math.min(MOVE_BURST, (p.moveBudget ?? MOVE_BURST) + mdt * MOVE_SPEED_MAX);
+      const tx = num(m.x, -1e6, 1e6, p.x), tz = num(m.z, -1e6, 1e6, p.z);
+      const dist = Math.hypot(tx - p.x, tz - p.z);
+      if (p.freeMove || dist <= p.moveBudget) {
+        p.x = tx; p.z = tz;
+        p.moveBudget = p.freeMove ? MOVE_BURST : p.moveBudget - dist;
+        p.freeMove = false;
+      } else {
+        const allowed = p.moveBudget, k = allowed / dist;
+        p.x += (tx - p.x) * k; p.z += (tz - p.z) * k;
+        p.moveBudget = 0;
+        if (dist - allowed > CORRECT_AFTER) {
+          suspicious(p, `moved ${dist.toFixed(1)} m in ${mdt.toFixed(2)} s`);
+          if (now - (p.posFixT || 0) > 500) { p.posFixT = now; p.conn.send({ t: 'pos', x: +p.x.toFixed(2), z: +p.z.toFixed(2) }); }
+        }
+      }
+      p.h = num(m.h, -1e4, 1e4, p.h); p.sp = num(m.sp, -3, 10);
+      const wasGrazing = p.g > 0.5;
+      p.g = num(m.g, 0, 1); p.l = m.l ? 1 : 0;
       if (!p.dead) { // while dead the progress stays reset (fresh calf) whatever the client says
         const dt = Math.min(5, (now - p.xpT) / 1000);
-        const food = Math.min(num(m.f, 0, 1, p.food), p.food + dt * GRAZE_RATE * RISE_SLACK);
-        const water = Math.min(num(m.w, 0, 1, p.water), p.water + dt * DRINK_RATE * RISE_SLACK);
+        // food / water only rise while the head is down eating / drinking, and never drop faster
+        // than hunger / thirst - so they can't be emptied and refilled to farm XP
+        const eating = (p.g > 0.5 || wasGrazing) && Math.abs(p.sp) < 1;
+        const clampStat = (v, prev, rise, drop) => Math.max(prev - dt * drop * 1.2 - 0.0005, Math.min(v, eating ? prev + dt * rise * RISE_SLACK : prev));
+        const rf = num(m.f, 0, 1, p.food), rw = num(m.w, 0, 1, p.water);
+        const food = clampStat(rf, p.food, GRAZE_RATE, FOOD_DROP_MAX);
+        const water = clampStat(rw, p.water, DRINK_RATE, WATER_DROP_MAX);
+        // XP for the food / water actually gained, drawn from a small bank
         const earned = Math.max(0, food - p.food) / GRAZE_RATE * XP_GRAZE + Math.max(0, water - p.water) / DRINK_RATE * XP_DRINK;
         p.xpBank = Math.min(XP_BANK_MAX, (p.xpBank || 0) + earned * XP_SLACK);
         const want = num(m.xp, 0, XP_MAX, p.xp);
@@ -177,6 +204,12 @@ function handle(p, text) {
         p.food = food; p.water = water;
         const maxHp = p.health + ((now - (p.hpT || now)) / 1000) * MAX_HEAL_PER_SEC;
         p.health = Math.min(num(m.hp, 0, 1, p.health), maxHp);
+        // the client's numbers drifted from the server's (a modified client, or lag): resync it
+        const off = Math.abs(rf - food) > 0.05 || Math.abs(rw - water) > 0.05 || want - p.xp > 5;
+        if (off) {
+          if (want - p.xp > 20) suspicious(p, `claimed ${Math.round(want - p.xp)} XP too many`);
+          if (now - (p.statFixT || 0) > 2000) { p.statFixT = now; p.conn.send({ t: 'stats', f: +food.toFixed(3), w: +water.toFixed(3), xp: Math.round(p.xp * 10) / 10 }); }
+        }
       }
       p.xpT = now;
       p.hpT = now;
@@ -197,7 +230,7 @@ function handle(p, text) {
       if (['croc', 'die', 'respawn'].includes(m.a) && now - (p.lastLife || 0) > 300) {
         p.lastLife = now;
         if (m.a === 'die') sendDeathLoss(p, eco.deathLoss(p));
-        if (m.a === 'respawn') p.lossApplied = false;
+        if (m.a === 'respawn') { p.lossApplied = false; p.freeMove = true; }
         if (m.a === 'die' || m.a === 'respawn') {
           // dying starts the account over: new calf at the spawn meadow
           Object.assign(p, { xp: 0, xpBank: 0, age: 0, xpT: now, food: 0.5, water: 0.7, health: 1 });
@@ -367,6 +400,15 @@ function startTimers() {
   }, 1000);
 }
 
+// a client did something an unmodified game can't do: log it (at most every 10 s per player)
+function suspicious(p, what) {
+  p.flags = (p.flags || 0) + 1;
+  const now = Date.now();
+  if (now - (p.flagLogT || 0) < 10000) return;
+  p.flagLogT = now;
+  console.log(`! suspicious ${p.name}${p.user ? ` [${p.user}]` : ''}: ${what} (${p.flags} so far)`);
+}
+
 function sendDeathLoss(p, loss) {
   if (!loss) return;
   p.dirty = true;
@@ -378,7 +420,7 @@ const broadcastPrice = (price) => broadcast({ t: 'price', milkPrice: price });
 // live wallet of online accounts (the database copy can be up to 20 s old)
 function liveStats() {
   const out = new Map();
-  for (const p of players.values()) if (p.ready && p.user) out.set(p.user.toLowerCase(), { coins: p.coins, udder: p.udder, bottles: p.bottles, inventory: p.inventory, xp: p.xp });
+  for (const p of players.values()) if (p.ready && p.user) out.set(p.user.toLowerCase(), { coins: p.coins, udder: p.udder, bottles: p.bottles, inventory: p.inventory, xp: p.xp, flags: p.flags || 0 });
   return out;
 }
 
