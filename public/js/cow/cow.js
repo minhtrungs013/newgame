@@ -693,38 +693,6 @@ export class Cow {
     }
   }
 
-  // milk bottles carried on the back (0..3), strapped on with a little harness
-  setBottles(n) {
-    if (n === this._bottleN) return;
-    this._bottleN = n;
-    if (!this.bottleRig) {
-      const rig = this.bottleRig = new THREE.Group();
-      rig.position.set(0, 1.44, -0.12);
-      this.body.add(rig);
-      const glass = new THREE.MeshStandardMaterial({ color: 0xf4f2ec, roughness: 0.25 });
-      const cap = new THREE.MeshStandardMaterial({ color: 0x3a7ad8, roughness: 0.5 });
-      const strap = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 });
-      this.materials.push(glass, cap, strap);
-      const belt = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.025, 6, 24, Math.PI), strap);
-      belt.position.y = -0.38; // half ring over the back, across the body
-      rig.add(belt);
-      this.bottleMeshes = [-0.26, 0, 0.26].map((z) => {
-        const b = new THREE.Group();
-        b.position.z = z;
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.08, 0.24, 12), glass);
-        body.position.y = 0.12; body.castShadow = true; b.add(body);
-        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.06, 0.07, 10), glass);
-        neck.position.y = 0.27; b.add(neck);
-        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.035, 10), cap);
-        top.position.y = 0.32; b.add(top);
-        rig.add(b);
-        return b;
-      });
-    }
-    this.bottleRig.visible = n > 0;
-    this.bottleMeshes.forEach((b, i) => { b.visible = i < n; });
-  }
-
   dispose() {
     this.scene.remove(this.root);
     this.root.traverse(o => { if (o.geometry && !o.userData.shared) o.geometry.dispose(); });

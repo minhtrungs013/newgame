@@ -17,7 +17,7 @@ let announcement = null; // admin announcement { text, by }
 const players = new Map(); // id -> player
 let nextId = 1;
 
-const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l, clan: p.clan || null, hp: +p.health.toFixed(2), acct: !!p.user, mb: eco.bottleCount(p) });
+const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l, clan: p.clan || null, hp: +p.health.toFixed(2), acct: !!p.user });
 const bodySize = (p) => CALF_SIZE + ((p.look ? p.look.size : 1) - CALF_SIZE) * p.age;
 
 function broadcast(obj, except) {
@@ -343,7 +343,7 @@ function startTimers() {
     for (const p of players.values()) {
       if (!p.ready || !p.dirty) continue;
       p.dirty = false;
-      ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2), +p.age.toFixed(3), p.l, +p.health.toFixed(2), eco.bottleCount(p)]);
+      ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2), +p.age.toFixed(3), p.l, +p.health.toFixed(2)]);
     }
     if (ps.length) broadcast({ t: 'snap', ps });
   }, 1000 / 15);

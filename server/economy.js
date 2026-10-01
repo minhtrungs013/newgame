@@ -45,7 +45,6 @@ function loadInto(p, saved) {
   p.bottles = Math.min(CAPACITY, Math.max(0, saved?.bottles || 0));
   p.inventory = Array.isArray(saved?.inventory) ? saved.inventory : [];
 }
-const bottleCount = (p) => Math.ceil((p.bottles || 0) / BOTTLE_L - 1e-6);
 const wallet = (p) => ({ udder: r2(p.udder), bottles: r2(p.bottles), coins: p.coins });
 const ecoMsg = (p) => ({ t: 'eco', ...wallet(p) });
 
@@ -140,6 +139,6 @@ function buy(p, itemId) {
 }
 
 module.exports = {
-  CAPACITY, getMilkPrice, setMilkPrice, loadInto, bottleCount, wallet, ecoMsg, produce, milkStart, milk, sell, deathLoss,
+  CAPACITY, getMilkPrice, setMilkPrice, loadInto, wallet, ecoMsg, produce, milkStart, milk, sell, deathLoss,
   shopItems, buy, isOnSale, locked,
 };

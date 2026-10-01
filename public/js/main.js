@@ -29,6 +29,30 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
+// ---------- loading screen ----------
+// The first frame used to freeze the page for ~2 s (shader compilation + building the map),
+// so everything heavy happens behind this screen, with a frame in between steps so it repaints.
+// (with a timer fallback: background tabs pause requestAnimationFrame)
+const nextFrame = () => new Promise((r) => { requestAnimationFrame(() => setTimeout(r, 0)); setTimeout(r, 120); });
+function loadingStep(pct, text) {
+  $('ld-fill').style.width = `${pct}%`;
+  if (text) $('ld-step').textContent = text;
+}
+// guide keys: registered before the game's key handler so they run first (also for the gamepad's
+// synthetic events): H toggles the guide, and while it's open the game ignores the keyboard
+const guide = { open: false, ready: false };
+addEventListener('keydown', (e) => {
+  if (!guide.ready) return;
+  const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName);
+  if (e.code === 'KeyH' && !e.ctrlKey && !typing) { e.preventDefault(); e.stopImmediatePropagation(); toggleGuide(); return; }
+  if (!guide.open) return;
+  e.stopImmediatePropagation();
+  if (e.code === 'Escape') toggleGuide(false);
+}, true);
+
+loadingStep(25, 'Đang dựng đồng cỏ…');
+await nextFrame();
+
 // does the cow still want to eat (or drink, at the water's edge)?
 const wantsMore = () => (state.canDrink ? state.water < FULL : state.food < FULL);
 
@@ -64,6 +88,7 @@ const farm = new Farm(scene, world); // barn + market near the spawn meadow
 const water = new Water(scene);
 const crocs = new Crocs(scene);
 
+loadingStep(40, 'Đang tải mô hình bò 3D…');
 // realistic cow model (falls back to the procedural cow if it can't load or is turned off)
 {
   let real = true;
@@ -162,11 +187,16 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Escape' && state.started) {
     e.preventDefault();
     if (market.open) market.close();
+    else if (panel.open) togglePanel(null);
     else if (!$('invite').classList.contains('hidden')) $('invite').classList.add('hidden');
     else toggleMenu();
     return;
   }
-  if (menuOpen || market.open) return;
+  if (state.started && !menuOpen && !market.open && !state.dead && e.target.tagName !== 'INPUT') {
+    if (e.code === 'Tab') { e.preventDefault(); togglePanel('bag'); return; }
+    if (e.code === 'KeyG') { togglePanel('clan'); return; }
+  }
+  if (menuOpen || market.open || panel.open) return;
   if (state.dead) {
     if ((e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') && state.deathShown) { e.preventDefault(); respawn(); }
     return;
@@ -196,7 +226,6 @@ addEventListener('keydown', (e) => {
     if (wantsMore()) cow.startGraze(1.5); else state.fullTimer = 2;
   }
   if (k === 'KeyM' && state.started) startMilking();
-  if (k === 'KeyG' && state.started) { toggleMenu(true, 'clan'); return; }
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
     document.body.classList.toggle('cinematic', state.cinematic);
@@ -329,15 +358,13 @@ function showPane(pane) {
   menuPane = pane;
   for (const b of document.querySelectorAll('.menu-tabs button')) b.classList.toggle('sel', b.dataset.pane === pane);
   for (const p of document.querySelectorAll('.menu-pane')) p.classList.toggle('hidden', p.id !== `pane-${pane}`);
-  if (pane === 'clan') clanPanel.refresh();
   if (pane === 'shop') renderShopTab($('pane-shop'), state.eco);
-  if (pane === 'bag') renderBag($('pane-bag'), state.eco);
   if (pane === 'admin') adminPanel.refresh();
 }
 for (const b of document.querySelectorAll('.menu-tabs button')) b.addEventListener('click', () => showPane(b.dataset.pane));
 function toggleMenu(open = !menuOpen, pane = null) {
   if (open && pane) showPane(pane);
-  else if (open && !menuOpen && ['clan', 'shop', 'bag', 'admin'].includes(menuPane)) showPane(menuPane);
+  else if (open && !menuOpen && ['shop', 'admin'].includes(menuPane)) showPane(menuPane);
   menuOpen = open;
   $('menu').classList.toggle('hidden', !open);
   state.keys.clear(); // don't keep walking with a key that was held when the menu opened
@@ -716,7 +743,7 @@ const net = new Net(scene, $('tags'), {
     if (clan && (!before || before.id !== clan.id)) { addChat('', `🛡️ Bạn đã vào clan [${clan.tag}] ${clan.name}. Chat riêng clan: /c <tin nhắn>`, true); toast(`🛡️ Đã vào clan [${clan.tag}]`); }
     if (!clan && before) addChat('', `Bạn đã rời clan [${before.tag}].`, true);
   },
-  onClanUpdate() { if (menuOpen && menuPane === 'clan') clanPanel.refresh(); },
+  onClanUpdate() { if (panel.open === 'clan') clanPanel.refresh(); },
   onEconomy(m) { handleEconomy(m); },
   onKicked(text) { addChat('', text || 'Bạn đã bị ngắt kết nối.', true); toast(text || 'Bạn đã bị ngắt kết nối.'); },
   // admin banner: a = { text, by } to show, null to hide; initial = state sent on join
@@ -950,7 +977,7 @@ function updateCow(dt) {
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
   let targetSpeed = 0;
   if (state.started && cow.lying && (f || r)) toggleLie();
-  const canControl = state.started && !state.dead && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying && state.milking <= 0 && !market.open;
+  const canControl = state.started && !state.dead && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying && state.milking <= 0 && !market.open && !panel.open;
   if (canControl && (f || r)) {
     // camera-relative movement. S = walk backwards: keep facing away from the camera
     // and step back (instead of turning round); S+A/D backs away diagonally.
@@ -1243,7 +1270,7 @@ function updateHud(dt) {
   $('bar-food').style.width = `${Math.round(state.food * 100)}%`;
   const li = levelInfo(state.xp);
   $('bar-grow').style.width = `${Math.round(li.frac * 100)}%`;
-  $('bar-grow').parentElement.title = state.level >= LEVEL_MAX ? 'Cấp tối đa' : `${Math.floor(li.into)} / ${li.need} XP`;
+  $('txt-xp').textContent = state.level >= LEVEL_MAX ? 'Cấp tối đa' : `${Math.floor(li.into)} / ${li.need} XP`;
   $('bar-water').style.width = `${Math.round(state.water * 100)}%`;
   $('bar-milk').style.width = `${Math.round((state.eco.udder / UDDER_MAX) * 100)}%`;
   $('bar-milk').parentElement.title = `Sữa trong bầu vú: ${fmtL(state.eco.udder)} / ${UDDER_MAX} L`;
@@ -1267,7 +1294,8 @@ function updateHud(dt) {
     : state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
   $('prompt').textContent = prompt;
   $('prompt').classList.toggle('show', !!prompt && state.started);
-  $('txt-stage').textContent = `Lv ${state.level} · ${stageName(state.level)}`;
+  $('txt-lv').textContent = `Lv ${state.level}`;
+  $('txt-stage').textContent = stageName(state.level);
   const m = state.distance;
   $('txt-online').textContent = `${net.online} người`;
   $('txt-dist').textContent = m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(2)} km`;
@@ -1294,6 +1322,25 @@ const market = new MarketDialog($('market'), {
   onBuy(id) { net.send({ t: 'buy', id }); },
 });
 const adminPanel = new AdminPanel($('pane-admin'), { getToken: () => account.token, toast });
+
+// ---------- clan (G) / bag (Tab) panel ----------
+const panel = { open: null };
+const PANELS = { clan: ['🛡️ Clan', 'G'], bag: ['🎒 Túi đồ', 'Tab'] };
+function togglePanel(which) {
+  if (!which || panel.open === which) which = null;
+  panel.open = which;
+  $('panel').classList.toggle('hidden', !which);
+  state.keys.clear();
+  if (!which) return;
+  $('panel-title').textContent = PANELS[which][0];
+  $('panel-key').textContent = PANELS[which][1];
+  $('pane-clan').classList.toggle('hidden', which !== 'clan');
+  $('pane-bag').classList.toggle('hidden', which !== 'bag');
+  if (which === 'clan') clanPanel.refresh();
+  else renderBag($('pane-bag'), state.eco);
+}
+$('panel-close').addEventListener('click', () => togglePanel(null));
+$('panel').addEventListener('pointerdown', (e) => { if (e.target === $('panel')) togglePanel(null); });
 
 function barnPrompt() {
   const e = state.eco;
@@ -1366,7 +1413,7 @@ function handleEconomy(m) {
       break;
   }
   market.update(e);
-  cow.setBottles(Math.ceil(e.bottles / BOTTLE_L - 1e-6));
+  if (panel.open === 'bag') renderBag($('pane-bag'), e);
 }
 
 // death screen: the run's summary plus what was lost (the server's message may come first)
@@ -1428,5 +1475,49 @@ function tick(dt) {
   if (settings.rumble && state.shake > prevShake + 0.05) pad.rumble(state.shake, 120 + state.shake * 300);
   prevShake = state.shake;
 }
+// ---------- how to play (bottom-left button, H) ----------
+function showGuide(section) {
+  for (const b of document.querySelectorAll('.gd-nav button')) b.classList.toggle('sel', b.dataset.gd === section);
+  for (const sec of document.querySelectorAll('.gd-body section')) sec.hidden = sec.dataset.gd !== section;
+  $('guide').querySelector('.gd-body').scrollTop = 0;
+}
+function toggleGuide(open = !guide.open) {
+  guide.open = open;
+  $('guide').classList.toggle('hidden', !open);
+  $('btn-guide').classList.remove('pulse');
+  if (open) { state.keys.clear(); try { localStorage.setItem('cow.guideSeen', '1'); } catch {} }
+}
+$('btn-guide').addEventListener('click', () => toggleGuide());
+$('guide-close').addEventListener('click', () => toggleGuide(false));
+$('guide').addEventListener('pointerdown', (e) => { if (e.target === $('guide')) toggleGuide(false); });
+for (const b of document.querySelectorAll('.gd-nav button')) b.addEventListener('click', () => showGuide(b.dataset.gd));
+
+// ---------- warm-up, then start ----------
+loadingStep(70, 'Đang tạo cây cối, hồ nước…');
+await nextFrame();
+terrain.update(cow.pos.x, cow.pos.z);
+world.update(cow.pos.x, cow.pos.z);
+water.update(cow.pos.x, cow.pos.z);
+updateCamera(0);
+loadingStep(85, 'Đang chuẩn bị đồ hoạ…');
+await nextFrame();
+{
+  // compile every shader up front without blocking the page (hidden things too: rain, snow...)
+  const hidden = [];
+  scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+  try { await renderer.compileAsync(scene, camera); } catch (e) { console.warn('shader warm-up failed', e); }
+  for (const o of hidden) o.visible = false;
+}
+loadingStep(100, 'Sẵn sàng!');
+tick(0.016);
+await nextFrame();
 requestAnimationFrame(frame);
+$('loading').classList.add('done');
+guide.ready = true;
+clearInterval(window.__tipTimer);
+setTimeout(() => $('loading').remove(), 900);
+// first visit: open the guide on the introduction
+let seenGuide = false;
+try { seenGuide = !!localStorage.getItem('cow.guideSeen'); } catch {}
+if (!seenGuide) { $('btn-guide').classList.add('pulse'); setTimeout(() => { showGuide('intro'); toggleGuide(true); }, 700); }
 window.__game = { farm, market, pad, state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn, camera, pickCow };

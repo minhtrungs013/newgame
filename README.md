@@ -96,7 +96,7 @@ Gói Free sẽ "ngủ" sau khoảng 15 phút không có ai truy cập. Lần và
 ## Điều khiển
 
 WASD/mũi tên: đi (S = lùi) · Shift: chạy · Space: nhảy · F: húc · E (giữ): gặm cỏ / uống nước · Q: kêu moo · Z: nằm nghỉ · Chuột: xoay camera · Lăn chuột: zoom ·
-Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · Ctrl+K: chỉnh tay thời tiết, giờ, mùa (admin/test)
+Enter: chat · Tab: túi đồ · G: clan · C: chế độ điện ảnh · H: hướng dẫn chơi · F3: debug · Esc: cài đặt · Ctrl+K: chỉnh tay thời tiết, giờ, mùa (admin/test)
 
 **Tay cầm (Xbox / PlayStation / tay cầm chuẩn):** cắm vào hoặc kết nối Bluetooth rồi bấm 1 nút bất kỳ. Cần trái: đi (analog) · Cần phải: camera (R3 về sau lưng) · LB/LT: chạy · A/✕: nhảy, vào game, chơi lại · B/○: nằm, quay lại · X/□ giữ: gặm cỏ/uống · Y/△: moo · RB/RT: húc · D-pad ↑↓: zoom · D-pad ←: điện ảnh · View: clan · Menu: cài đặt. Có rung khi bị va chạm (tắt trong cài đặt).
 
@@ -175,9 +175,9 @@ Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
 ## Sữa, xu và cửa hàng
 
 1. **Sữa:** bò **Lv 20+** đang no và đủ nước (trên 40%) tự ra sữa vào bầu vú (Lv 20 ≈ 1 lít/90 giây, Lv 30 ≈ 1 lít/50 giây, tối đa 10 lít) — thanh **🥛 Sữa** trên bảng trạng thái.
-2. **Vắt sữa:** vào **🏠 chuồng bò** (gần chỗ xuất phát, có icon trên minimap), nhấn **M** (tay cầm: D-pad →) → sữa vào bình mang trên lưng (tối đa 3 bình × 5 lít).
+2. **Vắt sữa:** vào **🏠 chuồng bò** (gần chỗ xuất phát, có icon trên minimap), nhấn **M** (tay cầm: D-pad →) → sữa vào bình (tối đa 3 bình × 5 lít).
 3. **Bán sữa:** mang bình tới **🏪 chợ**, đứng trước **quầy thu mua sữa** nhấn **E** → nhận **🪙 xu** theo giá do admin đặt (bảng giá ở chợ).
-4. **Cửa hàng:** quầy bên cạnh (nhấn **E**) bán vật phẩm admin thêm vào; đồ mua về nằm trong **Esc → 🎒 Túi đồ** (hiện chỉ để lưu giữ). Esc → 🎁 Cửa hàng để xem trước.
+4. **Cửa hàng:** quầy bên cạnh (nhấn **E**) bán vật phẩm admin thêm vào; đồ mua về nằm trong **🎒 Túi đồ** (phím **Tab**: sữa đang có + sản phẩm đã mua, hiện chỉ để lưu giữ). Esc → 🎁 Cửa hàng để xem trước.
 5. **Chết:** mất hết sữa đang có và **rớt 50% số xu** (đồ trong túi không mất).
 
 Mọi thứ liên quan tới xu (sữa trong bầu vú, vắt, bán, mua, mất khi chết) do server tính và kiểm tra vị trí — client không tự cộng được. Chơi khách không vắt / bán / mua được.
@@ -188,7 +188,7 @@ Dữ liệu: `players` (`coins`, `udder`, `bottles`, `inventory`), `shop_items`,
 
 ## Clan
 
-Nhấn **G** (hoặc Esc → tab **Clan**) để quản lý clan — cần đăng nhập.
+Nhấn **G** để quản lý clan — cần đăng nhập.
 
 - **Chưa có clan**: tạo clan (tên 3–20 ký tự, tag 2–4 chữ in hoa/số, màu, mở hoặc cần duyệt, mô tả) hoặc xin vào clan có sẵn.
 - **Trong clan**: danh sách thành viên (level, online), 👑 trưởng / ⭐ phó / thành viên. Trưởng: phong/hạ phó, kick, chuyển quyền, sửa cài đặt, giải tán. Phó: duyệt đơn, kick thành viên. Trưởng rời clan thì quyền tự chuyển cho phó (hoặc người vào lâu nhất). Tối đa 20 người.

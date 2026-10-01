@@ -1,4 +1,5 @@
 // Market UI: the milk stall (sell bottles), the shop (buy items with coins) and the bag.
+import { UDDER_MAX, BOTTLE_L, BOTTLES_MAX } from '../game/config.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const btn = (text, cls, fn) => { const b = el('button', cls, text); b.type = 'button'; b.addEventListener('click', fn); return b; };
@@ -132,17 +133,40 @@ export async function renderShopTab(root, eco) {
   root.replaceChildren(head, shopGrid(items, eco, () => {}, false));
 }
 
-// Esc menu tab "Túi đồ": what you've bought (keep only, for now)
+// Bag (Tab): milk on hand + what you've bought (keep only, for now)
 export function renderBag(root, eco) {
+  if (!eco.loggedIn) { root.replaceChildren(el('p', 'mk-note', 'Đăng nhập để có túi đồ, vắt và bán sữa.')); return; }
   const head = el('div', 'mk-head');
-  head.append(el('span', 'mk-note', '🎒 Đồ bạn đã mua (không mất khi chết).'), el('span', 'mk-coins', `🪙 ${fmt(eco.coins)}`));
+  head.append(el('span', 'mk-note', 'Đồ đã mua không mất khi chết · sữa thì có.'), el('span', 'mk-coins', `🪙 ${fmt(eco.coins)}`));
+
+  // milk
+  const milk = el('div', 'bag-sec');
+  milk.append(el('h3', '', '🥛 Sữa đang có'));
+  const cards = el('div', 'bag-milk');
+  const card = (label, value, note, frac) => {
+    const c = el('div');
+    c.append(el('small', '', label), el('b', '', value), el('small', '', note));
+    if (frac !== undefined) { const bar = el('div', 'bar'); const i = el('i'); i.style.width = `${Math.round(frac * 100)}%`; bar.append(i); c.append(bar); }
+    return c;
+  };
+  const nb = Math.ceil(eco.bottles / BOTTLE_L - 1e-6);
+  cards.append(
+    card('Trong bầu vú', `${liters(eco.udder)} / ${UDDER_MAX} L`, 'Vào chuồng 🏠 nhấn M để vắt', eco.udder / UDDER_MAX),
+    card('Trong bình', `🍼 ${nb} / ${BOTTLES_MAX} bình · ${liters(eco.bottles)}`, 'Mang ra chợ 🏪 bán', eco.bottles / (BOTTLE_L * BOTTLES_MAX)),
+    card('Giá trị nếu bán', `≈ ${fmt(eco.bottles * (eco.milkPrice || 0))} 🪙`, `Giá hiện tại ${eco.milkPrice ?? 0} 🪙 / lít`),
+  );
+  milk.append(cards);
+
+  // bought items
+  const items = el('div', 'bag-sec');
+  items.append(el('h3', '', `🎁 Sản phẩm đã mua${eco.inventory.length ? ` (${eco.inventory.reduce((n, x) => n + x.qty, 0)})` : ''}`));
   const list = el('div', 'mk-grid');
-  if (!eco.loggedIn) list.append(el('p', 'mk-note', 'Đăng nhập để có túi đồ.'));
-  else if (!eco.inventory.length) list.append(el('p', 'mk-note', 'Túi đồ trống. Bán sữa lấy xu rồi ghé cửa hàng nhé!'));
+  if (!eco.inventory.length) list.append(el('p', 'mk-note', 'Chưa có gì. Bán sữa lấy xu rồi ghé cửa hàng ở chợ nhé!'));
   for (const it of eco.inventory) {
-    const card = el('div', 'mk-item');
-    card.append(el('div', 'mk-icon', it.icon), el('div', 'mk-name', it.name), el('div', 'mk-meta', `× ${it.qty}`), el('div', 'mk-desc', `Mua ngày ${day(it.boughtAt)}`));
-    list.append(card);
+    const c = el('div', 'mk-item');
+    c.append(el('div', 'mk-icon', it.icon), el('div', 'mk-name', it.name), el('div', 'mk-meta', `× ${it.qty}`), el('div', 'mk-desc', `Mua ngày ${day(it.boughtAt)}`));
+    list.append(c);
   }
-  root.replaceChildren(head, list);
+  items.append(list);
+  root.replaceChildren(head, milk, items);
 }
