@@ -41,6 +41,14 @@ const MOVE_SPEED_MAX = 7;     // m/s the position budget refills at
 const MOVE_BURST = 12;        // m of budget that can be saved up
 const CORRECT_AFTER = 3;      // m off before the client is pulled back to the server's position
 
+// cheating: warnings, then bans that get longer each time (see moderation.js)
+const CLIENT_VERSION = 2;                 // older clients can't follow server corrections -> asked to reload
+const STRIKES_TO_BAN = 3;                 // clear violations within STRIKE_WINDOW_MS -> ban
+const STRIKE_WINDOW_MS = 10 * 60 * 1000;
+const BAN_STEPS_MIN = [10, 60, 360, 1440, 10080, 43200]; // 10 min, 1 h, 6 h, 1 day, 7 days, 30 days
+// only clear cheating counts (small lag-sized differences are just corrected)
+const SEVERE = { speed: 15, xp: 50, stats: 0.3 }; // metres beyond the allowance, XP over the server's, food / water over
+
 // combat
 const BUTT_DAMAGE = 0.12;          // health lost per headbutt from a non-teammate (x power 0.6..1.8)
 const MAX_HEAL_PER_SEC = 1 / 40;   // clients regen at 1/60 per s; anything faster is ignored
@@ -88,4 +96,5 @@ module.exports = {
   XP_GRAZE, XP_DRINK, GRAZE_RATE, DRINK_RATE, RISE_SLACK, XP_SLACK, XP_BANK_MAX,
   FOOD_DROP_MAX, WATER_DROP_MAX, MOVE_SPEED_MAX, MOVE_BURST, CORRECT_AFTER,
   BUTT_DAMAGE, MAX_HEAL_PER_SEC,
+  CLIENT_VERSION, STRIKES_TO_BAN, STRIKE_WINDOW_MS, BAN_STEPS_MIN, SEVERE,
 };

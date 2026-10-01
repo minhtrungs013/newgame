@@ -745,6 +745,19 @@ const net = new Net(scene, $('tags'), {
   },
   onClanUpdate() { if (panel.open === 'clan') clanPanel.refresh(); },
   onEconomy(m) { handleEconomy(m); },
+  // cheating detected: show why, and how close the account is to a ban
+  onWarn(m) {
+    const el = $('warnbar');
+    el.replaceChildren();
+    const b = document.createElement('b'); b.textContent = `⚠️ Phát hiện vi phạm: ${m.reason}`;
+    const small = document.createElement('span');
+    small.textContent = `${m.detail ? m.detail + ' · ' : ''}Vi phạm ${m.strikes}/${m.max} — tiếp tục sẽ bị khóa tài khoản.`;
+    el.append(b, small);
+    el.classList.remove('hidden');
+    clearTimeout(el._t); el._t = setTimeout(() => el.classList.add('hidden'), 9000);
+    audio.bonk(0.6);
+  },
+  onBanned(m) { showBanned(m); },
   onServerDeath(m) {
     if (state.dead) return;
     if (m.by) state.lastHitBy = m.by;
@@ -1333,6 +1346,27 @@ const market = new MarketDialog($('market'), {
   onBuy(id) { net.send({ t: 'buy', id }); },
 });
 const adminPanel = new AdminPanel($('pane-admin'), { getToken: () => account.token, toast });
+
+// ---------- account locked for cheating ----------
+function showBanned(m) {
+  state.keys.clear();
+  toggleMenu(false); market.close();
+  const until = m.until ? new Date(m.until) : null;
+  $('ban-reason').textContent = m.reason || 'Gian lận';
+  const tick = () => {
+    if (!until) { $('ban-until').textContent = 'Bạn đã bị ngắt kết nối. Chơi khách không lưu gì nên không bị khóa, nhưng vẫn sẽ bị ngắt mỗi lần gian lận.'; return; }
+    const left = Math.max(0, until - Date.now());
+    const h = Math.floor(left / 3600000), mi = Math.floor((left % 3600000) / 60000), se = Math.floor((left % 60000) / 1000);
+    $('ban-until').textContent = `Mở khóa lúc ${until.toLocaleString('vi-VN')} (còn ${h ? h + ' giờ ' : ''}${mi} phút ${se} giây)`;
+    if (left <= 0) { clearInterval(showBanned.timer); $('ban-until').textContent = 'Đã hết thời gian khóa — tải lại trang để chơi tiếp.'; }
+  };
+  clearInterval(showBanned.timer);
+  tick(); showBanned.timer = setInterval(tick, 1000);
+  $('ban-count').textContent = m.count ? `Đây là lần khóa thứ ${m.count}. Mỗi lần vi phạm tiếp theo thời gian khóa sẽ dài hơn (10 phút → 1 giờ → 6 giờ → 1 ngày → 7 ngày → 30 ngày).` : '';
+  $('banned').classList.remove('hidden');
+}
+$('ban-reload').addEventListener('click', () => location.reload());
+$('ban-logout').addEventListener('click', () => { try { localStorage.removeItem('cow.token'); } catch {} location.reload(); });
 
 // ---------- clan (G) / bag (Tab) panel ----------
 const panel = { open: null };

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { getDb } = require('./db');
 const { levelOf } = require('./config');
 const eco = require('./economy');
+const mod = require('./moderation');
 
 const err = (code, error) => ({ code, json: { error } });
 const ok = (json) => ({ code: 200, json });
@@ -79,6 +80,7 @@ async function handleAdmin(action, auth, body, game) {
     case 'players': {
       const live = game.liveStats();
       const list = await db.players.find({}, { sort: { updatedAt: -1 }, limit: 500 });
+      const users = new Map((await db.users.find({})).map((u) => [u._id, u]));
       return ok({
         players: list.map((pl) => {
           const l = live.get(pl._id);
@@ -88,9 +90,14 @@ async function handleAdmin(action, auth, body, game) {
             coins: l ? l.coins : pl.coins || 0, udder: l ? l.udder : pl.udder || 0, bottles: l ? l.bottles : pl.bottles || 0,
             items: (l ? l.inventory : pl.inventory || []).reduce((n, x) => n + (x.qty || 0), 0), updatedAt: pl.updatedAt,
             flags: l ? l.flags : 0, // suspicious actions this session
+            ban: mod.activeBan(users.get(pl._id)) || null, banCount: (users.get(pl._id) || {}).banCount || 0,
           };
         }),
       });
+    }
+    case 'unban': {
+      const ok2 = await mod.unban(text(body.username, 16), auth.username);
+      return ok2 ? ok({ unbanned: true }) : err(404, 'Không tìm thấy tài khoản.');
     }
   }
   return err(404, 'Unknown action');

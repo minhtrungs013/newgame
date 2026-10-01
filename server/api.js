@@ -4,6 +4,7 @@ const { USER_RE } = require('./config');
 const { readBody, sendJson } = require('./http-util');
 const { idOf, freshProgress, isAdmin, hashPassword, checkPassword, newSession, userFromToken, publicProfile } = require('./accounts');
 const { handleAdmin } = require('./admin');
+const mod = require('./moderation');
 const eco = require('./economy');
 
 // brute-force protection for login/register: 20 attempts / 10 min / IP
@@ -65,6 +66,8 @@ async function handleApi(req, res, url, game) {
   if (url === '/api/login') {
     const user = await db.users.get(id);
     if (!user || !(await checkPassword(password, user.password))) return sendJson(res, 401, { error: 'Sai tên đăng nhập hoặc mật khẩu.' });
+    const ban = mod.activeBan(user);
+    if (ban) return sendJson(res, 403, { error: mod.banText(ban), banned: { until: ban.until, reason: ban.reason } });
     let player = await db.players.get(id);
     if (!player) { player = { _id: id, username: user.username, name: user.username, look: null, ...freshProgress(), updatedAt: new Date() }; await db.players.put(player); }
     return sendJson(res, 200, { token: await newSession(user.username), ...publicProfile(player) });

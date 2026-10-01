@@ -5,7 +5,9 @@ const {
   MAX_PLAYERS, ADMIN_KEY, COATS, LEVEL_MAX, XP_MAX, levelOf, CALF_SIZE,
   XP_GRAZE, XP_DRINK, GRAZE_RATE, DRINK_RATE, RISE_SLACK, XP_SLACK, XP_BANK_MAX, BUTT_DAMAGE, MAX_HEAL_PER_SEC,
   FOOD_DROP_MAX, WATER_DROP_MAX, MOVE_SPEED_MAX, MOVE_BURST, CORRECT_AFTER,
+  CLIENT_VERSION, STRIKES_TO_BAN, STRIKE_WINDOW_MS, SEVERE,
 } = require('./config');
+const mod = require('./moderation');
 const { num, clean, cleanLook, sameKey } = require('./util');
 const { Conn } = require('./websocket');
 const { worldClock, envMsg, applyOverride } = require('./world-clock');
@@ -69,6 +71,11 @@ function connect(socket) {
 }
 
 async function hello(p, m) {
+  if ((Number(m.v) || 0) < CLIENT_VERSION) {
+    p.kicked = true;
+    p.conn.send({ t: 'kicked', text: 'Game vừa được cập nhật — nhấn F5 để tải bản mới nhất.' });
+    return p.conn.close();
+  }
   p.name = clean(m.name, 16) || `Bò ${p.id}`;
   p.coat = COATS.includes(m.coat) ? m.coat : 'holstein';
   p.look = cleanLook(m.look); // null for old clients -> they fall back to 'coat'
@@ -77,6 +84,12 @@ async function hello(p, m) {
   let profile = null;
   const auth = m.token ? await userFromToken(m.token) : null;
   if (!p.conn.open) return;
+  const ban = auth && mod.activeBan(auth.user);
+  if (ban) {
+    p.kicked = true;
+    p.conn.send({ t: 'banned', reason: ban.reason, until: ban.until });
+    return p.conn.close();
+  }
   if (auth) {
     // the same account playing in another tab/device: save that one and kick it
     for (const o of players.values()) {
@@ -179,6 +192,7 @@ function handle(p, text) {
         p.moveBudget = 0;
         if (dist - allowed > CORRECT_AFTER) {
           suspicious(p, `moved ${dist.toFixed(1)} m in ${mdt.toFixed(2)} s`);
+          if (dist - allowed > SEVERE.speed) violation(p, 'speed', `${dist.toFixed(0)} m trong ${mdt.toFixed(1)} giây`);
           if (now - (p.posFixT || 0) > 500) { p.posFixT = now; p.conn.send({ t: 'pos', x: +p.x.toFixed(2), z: +p.z.toFixed(2) }); }
         }
       }
@@ -208,6 +222,8 @@ function handle(p, text) {
         const off = Math.abs(rf - food) > 0.05 || Math.abs(rw - water) > 0.05 || want - p.xp > 5;
         if (off) {
           if (want - p.xp > 20) suspicious(p, `claimed ${Math.round(want - p.xp)} XP too many`);
+          if (want - p.xp > SEVERE.xp) violation(p, 'xp', `khai dư ${Math.round(want - p.xp)} XP`);
+          else if (rf - food > SEVERE.stats || rw - water > SEVERE.stats) violation(p, 'stats', `no ${Math.round(rf * 100)}% / nước ${Math.round(rw * 100)}% (thực tế ${Math.round(food * 100)}% / ${Math.round(water * 100)}%)`);
           if (now - (p.statFixT || 0) > 2000) { p.statFixT = now; p.conn.send({ t: 'stats', f: +food.toFixed(3), w: +water.toFixed(3), xp: Math.round(p.xp * 10) / 10 }); }
         }
       }
@@ -425,6 +441,34 @@ function killPlayer(p, reason, by) {
   p.conn.send({ t: 'die', reason, by });
   broadcast({ t: 'act', id: p.id, a: 'die' }, p);
   console.log(`x ${p.name} died (${reason}${by ? ` by ${by}` : ''})`);
+}
+
+// a clear violation: warn the player with the reason; STRIKES_TO_BAN of them within
+// STRIKE_WINDOW_MS bans the account (guests are just disconnected)
+function violation(p, kind, detail) {
+  const now = Date.now();
+  p.lastStrike = p.lastStrike || {};
+  if (now - (p.lastStrike[kind] || 0) < 10000) return; // at most one strike per kind every 10 s
+  p.lastStrike[kind] = now;
+  p.strikes = (p.strikes || []).filter((t) => now - t < STRIKE_WINDOW_MS);
+  p.strikes.push(now);
+  const n = p.strikes.length;
+  console.log(`!! violation ${p.name} [${p.user || 'guest'}]: ${kind} (${detail}) ${n}/${STRIKES_TO_BAN}`);
+  p.conn.send({ t: 'warn', reason: mod.REASONS[kind], detail, strikes: n, max: STRIKES_TO_BAN });
+  if (n >= STRIKES_TO_BAN && !p.banning) banPlayer(p, mod.REASONS[kind]).catch((e) => console.error('ban failed', e));
+}
+async function banPlayer(p, reason) {
+  p.banning = true;
+  if (p.user) {
+    await saveProfile(p); // the server's own numbers - nothing the cheat changed
+    const b = await mod.ban(p.user, reason);
+    p.kicked = true;
+    p.conn.send({ t: 'banned', reason, until: b && b.until, minutes: b && b.minutes, count: b && b.count });
+  } else {
+    p.kicked = true;
+    p.conn.send({ t: 'banned', reason, until: null, guest: true });
+  }
+  setTimeout(() => p.conn.close(), 300);
 }
 
 function sendDeathLoss(p, loss) {

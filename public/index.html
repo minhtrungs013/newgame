@@ -448,6 +448,21 @@
   <div id="prompt" class="ui"></div>
   <div id="milkbar" class="ui hidden"><span>🪣 Đang vắt sữa…</span><div class="bar"><i id="milkbar-fill"></i></div></div>
   <div id="coinfx" class="ui"></div>
+  <!-- cheating: warning bar + account-locked screen -->
+  <div id="warnbar" class="hidden" role="alert"></div>
+  <div id="banned" class="hidden" role="alertdialog">
+    <div class="ban-card">
+      <div class="ban-icon">🔒</div>
+      <h2>Tài khoản đã bị khóa</h2>
+      <p>Lý do: <b id="ban-reason"></b></p>
+      <p id="ban-until"></p>
+      <p class="ban-note" id="ban-count"></p>
+      <div class="ban-actions">
+        <button type="button" id="ban-reload">Tải lại</button>
+        <button type="button" id="ban-logout" class="secondary">Đăng xuất</button>
+      </div>
+    </div>
+  </div>
   <!-- Clan (G) / bag (Tab) -->
   <div id="panel" class="hidden">
     <div class="menu-card panel-card">

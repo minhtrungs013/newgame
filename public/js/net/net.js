@@ -12,6 +12,9 @@ function angleDiff(a, b) {
 }
 
 // Floating HTML label (name + chat bubble) that follows a cow on screen.
+// protocol version sent with 'hello' (must match server/config.js CLIENT_VERSION)
+const PROTOCOL = 2;
+
 export class NameTag {
   constructor(container, name, self = false) {
     this.el = document.createElement('div');
@@ -168,7 +171,7 @@ export class Net {
     this.h.onStatus('connecting');
     ws.onopen = () => {
       this.retryDelay = 1500;
-      ws.send(JSON.stringify({ t: 'hello', name: this.name, look: this.look, token: this.token || undefined }));
+      ws.send(JSON.stringify({ t: 'hello', v: PROTOCOL, name: this.name, look: this.look, token: this.token || undefined }));
     };
     ws.onmessage = (e) => {
       let m;
@@ -258,6 +261,14 @@ export class Net {
         if (r) this.h.onRemoteAct(r, m.a);
         break;
       }
+      // cheating detected: a warning (with the reason) or a ban
+      case 'warn':
+        this.h.onWarn(m);
+        break;
+      case 'banned':
+        this.kicked = true; // don't reconnect
+        this.h.onBanned(m);
+        break;
       case 'die': // the server ended our life (e.g. headbutted to 0 health)
         this.h.onServerDeath(m);
         break;
