@@ -38,7 +38,43 @@ const XP_BANK_MAX = 40;
 const BUTT_DAMAGE = 0.12;          // health lost per headbutt from a non-teammate (x power 0.6..1.8)
 const MAX_HEAL_PER_SEC = 1 / 40;   // clients regen at 1/60 per s; anything faster is ignored
 
+// ---------- milk & coins ----------
+const MILK_MIN_LEVEL = 20;          // adult cows only
+const UDDER_MAX = 10;               // litres the udder holds
+const BOTTLE_L = 5, BOTTLES_MAX = 3; // milk is carried in bottles: 3 x 5 L
+// litres per second while fed & watered: 1 L / 90 s at Lv 20 -> 1 L / 50 s at Lv 30
+const milkRate = (level) => (level < MILK_MIN_LEVEL ? 0 : 1 / 90 + ((level - MILK_MIN_LEVEL) / (30 - MILK_MIN_LEVEL)) * (1 / 50 - 1 / 90));
+const MILK_NEED = 0.4;              // food and water must both be above this to make milk
+const MILK_TIME = 3;                // seconds of milking
+const DEFAULT_MILK_PRICE = 5;       // coins per litre (admins change it in the game)
+const DEATH_COIN_LOSS = 0.5;        // share of coins lost on death
+const ADMIN_USERS = (process.env.ADMIN_USERS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+// ---------- farm buildings (must match public/js/game/config.js) ----------
+// x, z = centre; yaw = rotation (local +z is the front: the barn door / the counters)
+const BARN = { x: 20.4, z: -12.7, yaw: -1.014, w: 9, d: 11 };
+const MARKET = { x: -7.3, z: 29.1, yaw: 2.89 };
+const COUNTERS = { milk: { lx: -3.4, lz: 2.4 }, shop: { lx: 3.4, lz: 2.4 } }; // stand-here spots, market space
+const toLocal = (b, x, z) => {
+  const dx = x - b.x, dz = z - b.z, c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+  return { lx: dx * c - dz * s, lz: dx * s + dz * c };
+};
+const toWorld = (b, lx, lz) => {
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+  return { x: b.x + lx * c + lz * s, z: b.z - lx * s + lz * c };
+};
+const inBarn = (x, z, slack = 0) => {
+  const { lx, lz } = toLocal(BARN, x, z);
+  return Math.abs(lx) < BARN.w / 2 - 0.5 + slack && Math.abs(lz) < BARN.d / 2 - 0.5 + slack;
+};
+const nearCounter = (which, x, z, range = 3) => {
+  const c = COUNTERS[which], p = toWorld(MARKET, c.lx, c.lz);
+  return Math.hypot(x - p.x, z - p.z) < range;
+};
+
 module.exports = {
+  MILK_MIN_LEVEL, UDDER_MAX, BOTTLE_L, BOTTLES_MAX, milkRate, MILK_NEED, MILK_TIME, DEFAULT_MILK_PRICE, DEATH_COIN_LOSS, ADMIN_USERS,
+  BARN, MARKET, COUNTERS, inBarn, nearCounter,
   PORT, MAX_PLAYERS, ADMIN_KEY, SESSION_TTL, USER_RE,
   COATS, PATTERNS, HORNS, ACCESSORIES, HEX, CALF_SIZE,
   LEVEL_MAX, XP_MAX, levelOf,

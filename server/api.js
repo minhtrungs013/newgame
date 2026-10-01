@@ -2,7 +2,9 @@
 const { getDb } = require('./db');
 const { USER_RE } = require('./config');
 const { readBody, sendJson } = require('./http-util');
-const { idOf, freshProgress, hashPassword, checkPassword, newSession, userFromToken, publicProfile } = require('./accounts');
+const { idOf, freshProgress, isAdmin, hashPassword, checkPassword, newSession, userFromToken, publicProfile } = require('./accounts');
+const { handleAdmin } = require('./admin');
+const eco = require('./economy');
 
 // brute-force protection for login/register: 20 attempts / 10 min / IP
 const authHits = new Map();
@@ -13,20 +15,30 @@ function rateLimited(ip) {
   return e.n > 20;
 }
 
-// clans = the game's clan manager (it knows who is online)
-async function handleApi(req, res, url, clans) {
+// game = the running game (clan manager, online players)
+async function handleApi(req, res, url, game) {
   const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
   if (url.startsWith('/api/clan/')) {
     const auth = await userFromToken((req.headers.authorization || '').replace(/^Bearer /, ''));
     if (!auth) return sendJson(res, 401, { error: 'Cần đăng nhập để dùng clan.' });
     const body = req.method === 'POST' ? await readBody(req) : {};
     if (!body) return sendJson(res, 400, { error: 'Dữ liệu không hợp lệ.' });
-    const r = await clans.handle(url.slice('/api/clan/'.length), auth, body);
+    const r = await game.clans.handle(url.slice('/api/clan/'.length), auth, body);
     return sendJson(res, r.code, r.json);
   }
+  if (url.startsWith('/api/admin/')) {
+    const auth = await userFromToken((req.headers.authorization || '').replace(/^Bearer /, ''));
+    if (!auth || !isAdmin(auth.user)) return sendJson(res, 403, { error: 'Chỉ admin mới dùng được.' });
+    const body = req.method === 'POST' ? await readBody(req, 8192) : {};
+    if (!body) return sendJson(res, 400, { error: 'Dữ liệu không hợp lệ.' });
+    const r = await handleAdmin(url.slice('/api/admin/'.length), auth, body, game);
+    return sendJson(res, r.code, r.json);
+  }
+  // shop window: anyone may look (buying happens in the game, at the counter)
+  if (url === '/api/shop' && req.method === 'GET') return sendJson(res, 200, { items: await eco.shopItems(), milkPrice: await eco.getMilkPrice() });
   if (url === '/api/me' && req.method === 'GET') {
     const auth = await userFromToken((req.headers.authorization || '').replace(/^Bearer /, ''));
-    return auth ? sendJson(res, 200, publicProfile(auth.player)) : sendJson(res, 401, { error: 'Phiên đăng nhập đã hết hạn.' });
+    return auth ? sendJson(res, 200, { ...publicProfile(auth.player), admin: isAdmin(auth.user) }) : sendJson(res, 401, { error: 'Phiên đăng nhập đã hết hạn.' });
   }
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   const body = await readBody(req);

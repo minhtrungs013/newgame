@@ -121,6 +121,9 @@ export class World {
     this.radius = 5;
     this.chunks = new Map();
     this.colliders = [];
+    this.statics = [];   // colliders of fixed buildings (the farm), kept whatever chunks load
+    this.masks = [];     // circles where grass must not grow (barn floor)
+    this.reserved = [];  // circles kept free of trees, rocks, fences
 
     // foliage sways in the wind (per-vertex "sway" weight, world-space phase)
     this.swayUniforms = { uTime: { value: 0 }, uWind: { value: 0.5 } };
@@ -164,6 +167,15 @@ export class World {
       reed: new THREE.Color(0x6a7a3a), cattail: new THREE.Color(0x5a3a22), pad: new THREE.Color(0x3a6a2a),
     };
   }
+
+  // fixed buildings: keep props away and add their colliders / grass masks
+  reserve(x, z, r) { this.reserved.push({ x, z, r }); }
+  addStatic(colliders, masks = []) {
+    this.statics.push(...colliders);
+    this.colliders.push(...colliders);
+    this.masks.push(...masks);
+  }
+  _free(x, z) { return !this.reserved.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 < c.r * c.r); }
 
   // is this spot usable for a land prop? (not in or right next to water)
   _dry(x, z) {
@@ -274,7 +286,7 @@ export class World {
     const nearSpawn = (x, z) => x * x + z * z < 12 * 12;
     const place = (fn) => {
       const x = x0 + rnd() * this.cell, z = z0 + rnd() * this.cell;
-      if (nearSpawn(x, z) || !this._dry(x, z)) return;
+      if (nearSpawn(x, z) || !this._dry(x, z) || !this._free(x, z)) return;
       fn(x, z, heightAt(x, z));
     };
 
@@ -320,7 +332,7 @@ export class World {
         let prev = null;
         for (let k = 0; k < n; k++) {
           const px = sx + dx * (k - n / 2) * 2.4, pz = sz + dz * (k - n / 2) * 2.4;
-          if (!this._dry(px, pz)) { prev = null; continue; }
+          if (!this._dry(px, pz) || !this._free(px, pz)) { prev = null; continue; }
           const py = heightAt(px, pz);
           B.add('solid', this.postGeo, mtx(px, py - 0.1, pz, (rnd() - 0.5) * 0.12, rnd(), (rnd() - 0.5) * 0.12), this.col.wood);
           colliders.push({ x: px, z: pz, r: 0.35 });
@@ -371,7 +383,7 @@ export class World {
         this.chunks.delete(key);
       }
     }
-    this.colliders = [];
+    this.colliders = [...this.statics];
     for (const ch of this.chunks.values()) this.colliders.push(...ch.colliders);
     return true;
   }
@@ -379,9 +391,9 @@ export class World {
   // nearest obstacles (within the grass patch) -> grass shader, so blades don't poke
   // through rocks & trunks. Returns how many slots were filled.
   nearest(px, pz, out, range = 60) {
-    const list = this.colliders
+    const list = [...this.colliders.filter((c) => c.r > 0.45), ...this.masks]
       .map(c => ({ c, d: (c.x - px) ** 2 + (c.z - pz) ** 2 - c.r * c.r }))
-      .filter(o => o.c.r > 0.45 && o.d < range * range)
+      .filter(o => o.d < range * range)
       .sort((a, b) => a.d - b.d);
     for (let i = 0; i < out.length; i++) {
       const o = list[i];

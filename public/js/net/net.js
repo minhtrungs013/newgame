@@ -86,7 +86,7 @@ class Remote {
     this.cow = new Cow(scene, { look: p.look, coat: p.coat, seed: p.id * 7 + 3, age: p.a ?? 1 });
     this.cow.pos.set(p.x, heightAt(p.x, p.z), p.z);
     this.cow.heading = p.h;
-    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1, l: p.l || 0, hp: p.hp ?? 1 };
+    this.target = { x: p.x, z: p.z, h: p.h, sp: p.sp || 0, g: p.g || 0, a: p.a ?? 1, l: p.l || 0, hp: p.hp ?? 1, mb: p.mb || 0 };
     this.acct = !!p.acct; // logged-in account (only those can join clans)
     this.cow.root.userData.remoteId = p.id; // for clicking on the cow
     this.cow.lying = !!p.l;
@@ -112,6 +112,7 @@ class Remote {
     c.speed += (t.sp - c.speed) * Math.min(1, dt * 8);
     c.grazeTimer = t.g > 0.5 ? 0.5 : 0;
     c.lying = t.l > 0.5;
+    c.setBottles(t.mb); // milk bottles on the back
     // name tag shows the level (server sends age = level / 30)
     const lv = Math.round(t.a * 30);
     if (lv !== this.lv) { this.lv = lv; this.tag.setLabel(this.name, lv, this.clan); }
@@ -222,9 +223,9 @@ export class Net {
         break;
       }
       case 'snap':
-        for (const [id, x, z, h, sp, g, a, l, hp] of m.ps) {
+        for (const [id, x, z, h, sp, g, a, l, hp, mb] of m.ps) {
           const r = this.remotes.get(id);
-          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a, l: l ?? 0, hp: hp ?? r.target.hp });
+          if (r) Object.assign(r.target, { x, z, h, sp, g, a: a ?? r.target.a, l: l ?? 0, hp: hp ?? r.target.hp, mb: mb ?? r.target.mb });
         }
         break;
       case 'moo': {
@@ -273,6 +274,10 @@ export class Net {
       case 'announce':
         // admin banner shown to everyone (text null = removed)
         this.h.onAnnounce(m.text ? m : null, false);
+        break;
+      // milk & coins: wallet updates and the answers to milk / sell / buy
+      case 'eco': case 'milked': case 'sold': case 'bought': case 'deathloss': case 'price':
+        this.h.onEconomy(m);
         break;
       case 'sys':
         this.h.onSystem(m.text);

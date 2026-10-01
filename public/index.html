@@ -79,7 +79,9 @@
     <div class="status-row"><span>Vui vẻ</span><div class="bar"><i id="bar-happy"></i></div></div>
     <div class="status-row"><span>No bụng</span><div class="bar"><i id="bar-food"></i></div></div>
     <div class="status-row"><span>Nước</span><div class="bar"><i id="bar-water"></i></div></div>
+    <div class="status-row" id="row-milk"><span>🥛 Sữa</span><div class="bar" title="Sữa trong bầu vú"><i id="bar-milk"></i></div></div>
     <div class="status-row"><span id="txt-stage">Bê con</span><div class="bar"><i id="bar-grow"></i></div></div>
+    <div class="status-row small" id="row-wallet"><span id="txt-bottles">🍼 0 bình</span><b id="txt-coins">🪙 0</b></div>
     <div class="status-row small"><span>Quãng đường</span><b id="txt-dist">0 m</b></div>
     <div class="status-row small"><span><i id="net-dot" class="dot"></i><span id="net-text">Offline</span></span><b id="txt-online">1 người</b></div>
   </div>
@@ -102,10 +104,16 @@
           <button type="button" data-pane="settings" class="sel">⚙️ Cài đặt</button>
           <button type="button" data-pane="controls">🎮 Điều khiển</button>
           <button type="button" data-pane="clan">🛡️ Clan <kbd>G</kbd></button>
+          <button type="button" data-pane="shop">🎁 Cửa hàng</button>
+          <button type="button" data-pane="bag">🎒 Túi đồ</button>
+          <button type="button" data-pane="admin" id="tab-admin" class="hidden">🛠️ Quản trị</button>
         </div>
         <small>Game nhiều người chơi vẫn tiếp diễn khi mở menu</small>
       </div>
       <div id="pane-clan" class="menu-pane hidden"></div>
+      <div id="pane-shop" class="menu-pane hidden"></div>
+      <div id="pane-bag" class="menu-pane hidden"></div>
+      <div id="pane-admin" class="menu-pane hidden"></div>
       <div id="pane-controls" class="menu-grid menu-pane hidden">
         <section>
           <h3>⌨️ Bàn phím &amp; chuột</h3>
@@ -121,6 +129,8 @@
             <kbd>C</kbd><span>Chế độ điện ảnh</span>
             <kbd>G</kbd><span>Quản lý clan</span>
             <kbd>/c</kbd><span>Chat riêng trong clan</span>
+            <kbd>M</kbd><span>Vắt sữa (trong chuồng)</span>
+            <kbd>E (ở chợ)</kbd><span>Bán sữa / mở cửa hàng</span>
             <kbd>Chuột kéo</kbd><span>Xoay camera · lăn: zoom</span>
             <kbd>Nhấp bò khác</kbd><span>Xem thông tin · mời clan</span>
             <kbd>Esc</kbd><span>Mở / đóng cài đặt</span>
@@ -139,6 +149,7 @@
             <kbd>RB / RT</kbd><span>Húc</span>
             <kbd>D-pad ↑ ↓</kbd><span>Phóng to / thu nhỏ</span>
             <kbd>D-pad ←</kbd><span>Chế độ điện ảnh</span>
+            <kbd>D-pad →</kbd><span>Vắt sữa (trong chuồng)</span>
             <kbd>View / Share</kbd><span>Quản lý clan</span>
             <kbd>Menu / Options</kbd><span>Mở / đóng cài đặt</span>
           </div>
@@ -233,6 +244,10 @@
   </div>
   <div id="toast" class="ui"></div>
   <div id="prompt" class="ui"></div>
+  <div id="milkbar" class="ui hidden"><span>🪣 Đang vắt sữa…</span><div class="bar"><i id="milkbar-fill"></i></div></div>
+  <div id="coinfx" class="ui"></div>
+  <!-- Market counters: milk stall / shop -->
+  <div id="market" class="hidden"></div>
   <pre id="debug" class="ui hidden"></pre>
   <div id="letterbox-top" class="letterbox"></div>
   <div id="letterbox-bottom" class="letterbox"></div>

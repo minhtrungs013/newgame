@@ -16,6 +16,7 @@ const BUTTONS = {
   8: 'KeyG',       // View / Share  clan manager
   9: 'Escape',     // Menu / Options  settings
   14: 'KeyC',      // D-pad left  cinematic mode
+  15: 'KeyM',      // D-pad right milk the cow (in the barn)
 };
 const DEAD = 0.18; // stick dead zone
 

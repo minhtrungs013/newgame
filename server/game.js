@@ -10,12 +10,14 @@ const { Conn } = require('./websocket');
 const { worldClock, envMsg, applyOverride } = require('./world-clock');
 const { idOf, freshProgress, userFromToken, saveProfile } = require('./accounts');
 const { createClans } = require('./clans');
+const eco = require('./economy');
+const { isAdmin } = require('./accounts');
 
 let announcement = null; // admin announcement { text, by }
 const players = new Map(); // id -> player
 let nextId = 1;
 
-const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l, clan: p.clan || null, hp: +p.health.toFixed(2), acct: !!p.user });
+const publicInfo = (p) => ({ id: p.id, name: p.name, coat: p.coat, look: p.look, x: p.x, z: p.z, h: p.h, sp: p.sp, g: p.g, a: p.age, l: p.l, clan: p.clan || null, hp: +p.health.toFixed(2), acct: !!p.user, mb: eco.bottleCount(p) });
 const bodySize = (p) => CALF_SIZE + ((p.look ? p.look.size : 1) - CALF_SIZE) * p.age;
 
 function broadcast(obj, except) {
@@ -51,6 +53,7 @@ function connect(socket) {
     age: 0, xp: 0, xpT: Date.now(), food: 0.5, water: 0.7, health: 1,
     user: null, saveDirty: false,
   };
+  eco.loadInto(p, null);
   p.conn = new Conn(socket, (text) => handle(p, text), () => {
     if (!players.has(p.id)) return;
     players.delete(p.id);
@@ -89,7 +92,12 @@ async function hello(p, m) {
     p.user = fresh.username;
     p.xp = num(pr.xp, 0, XP_MAX, 0); p.food = num(pr.food, 0, 1, 0.5); p.water = num(pr.water, 0, 1, 0.7); p.health = num(pr.health, 0.05, 1, 1);
     if (typeof pr.x === 'number' && typeof pr.z === 'number') { p.x = pr.x; p.z = pr.z; p.h = num(pr.h, -1e4, 1e4, 0); }
-    profile = { username: p.user, xp: p.xp, food: p.food, water: p.water, health: p.health, x: p.x, z: p.z, h: p.h };
+    eco.loadInto(p, saved);
+    p.admin = isAdmin(fresh); // account admins may use the admin chat commands without the key
+    profile = {
+      username: p.user, xp: p.xp, food: p.food, water: p.water, health: p.health, x: p.x, z: p.z, h: p.h,
+      coins: p.coins, udder: p.udder, bottles: p.bottles, inventory: p.inventory, admin: p.admin,
+    };
     p.saveDirty = true;
     const c = fresh.clanId ? await clans.getClan(fresh.clanId) : null;
     p.clan = clans.pub(c);
@@ -100,6 +108,7 @@ async function hello(p, m) {
   p.ready = true;
   p.conn.send({
     t: 'welcome', id: p.id, x: p.x, z: p.z, h: p.h, env: envMsg(), announce: announcement, profile, clan: p.clan || null,
+    milkPrice: await eco.getMilkPrice(),
     players: [...players.values()].filter(o => o.ready && o !== p).map(publicInfo),
   });
   broadcast({ t: 'join', p: publicInfo(p) }, p);
@@ -187,6 +196,8 @@ function handle(p, text) {
       // life events: eaten by a croc, died, respawned (others only see the animation)
       if (['croc', 'die', 'respawn'].includes(m.a) && now - (p.lastLife || 0) > 300) {
         p.lastLife = now;
+        if (m.a === 'die') sendDeathLoss(p, eco.deathLoss(p));
+        if (m.a === 'respawn') p.lossApplied = false;
         if (m.a === 'die' || m.a === 'respawn') {
           // dying starts the account over: new calf at the spawn meadow
           Object.assign(p, { xp: 0, xpBank: 0, age: 0, xpT: now, food: 0.5, water: 0.7, health: 1 });
@@ -221,11 +232,41 @@ function handle(p, text) {
       target.dirty = true;
       target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3), p: +power.toFixed(2), dmg, hp: +target.health.toFixed(3) });
       if (target.health <= 0) {
+        sendDeathLoss(target, eco.deathLoss(target)); // the server saw it die: don't rely on its client
         p.conn.send({ t: 'sys', text: `💪 Bạn đã húc gục ${target.name}!` });
         broadcast({ t: 'chat', id: 0, name: '', text: `💥 ${target.name} đã bị ${p.name} húc gục`, sys: true });
       }
       const fx = JSON.stringify({ t: 'hitfx', from: p.id, to: target.id });
       for (const o of players.values()) if (o.ready && o !== p && o !== target) o.conn.send(fx);
+      break;
+    }
+    case 'milk-start': { // started milking in the barn (others see it)
+      if (!p.ready || p.dead) return;
+      eco.milkStart(p);
+      broadcast({ t: 'act', id: p.id, a: 'milk' }, p);
+      break;
+    }
+    case 'milk': {
+      if (!p.ready || p.dead) return;
+      const r = eco.milk(p);
+      if (r.ok) p.dirty = true;
+      p.conn.send({ t: 'milked', ...r, ...eco.wallet(p) });
+      break;
+    }
+    case 'sell': {
+      if (!p.ready || p.dead) return;
+      eco.sell(p).then((r) => {
+        if (r.ok) { p.dirty = true; saveProfile(p); }
+        p.conn.send({ t: 'sold', ...r, ...eco.wallet(p) });
+      }).catch((e) => console.error('sell failed', e));
+      break;
+    }
+    case 'buy': {
+      if (!p.ready || p.dead) return;
+      eco.buy(p, m.id).then((r) => {
+        if (r.ok) saveProfile(p);
+        p.conn.send({ t: 'bought', ...r, inventory: p.inventory, ...eco.wallet(p) });
+      }).catch((e) => console.error('buy failed', e));
       break;
     }
     case 'clan-invite': {
@@ -302,7 +343,7 @@ function startTimers() {
     for (const p of players.values()) {
       if (!p.ready || !p.dirty) continue;
       p.dirty = false;
-      ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2), +p.age.toFixed(3), p.l, +p.health.toFixed(2)]);
+      ps.push([p.id, +p.x.toFixed(2), +p.z.toFixed(2), +p.h.toFixed(3), +p.sp.toFixed(2), +p.g.toFixed(2), +p.age.toFixed(3), p.l, +p.health.toFixed(2), eco.bottleCount(p)]);
     }
     if (ps.length) broadcast({ t: 'snap', ps });
   }, 1000 / 15);
@@ -316,10 +357,33 @@ function startTimers() {
     }
   }, 2000);
   setInterval(() => { for (const p of players.values()) if (p.ready && p.user && p.saveDirty) saveProfile(p); }, 20000);
+  setInterval(() => {
+    for (const p of players.values()) {
+      if (!p.ready) continue;
+      eco.produce(p, 1);
+      const msg = eco.ecoMsg(p), key = `${msg.udder}|${msg.bottles}|${msg.coins}`;
+      if (key !== p.ecoKey) { p.ecoKey = key; p.conn.send(msg); }
+    }
+  }, 1000);
+}
+
+function sendDeathLoss(p, loss) {
+  if (!loss) return;
+  p.dirty = true;
+  p.conn.send({ t: 'deathloss', ...loss, ...eco.wallet(p) });
+}
+
+// admin: tell everyone the new milk price
+const broadcastPrice = (price) => broadcast({ t: 'price', milkPrice: price });
+// live wallet of online accounts (the database copy can be up to 20 s old)
+function liveStats() {
+  const out = new Map();
+  for (const p of players.values()) if (p.ready && p.user) out.set(p.user.toLowerCase(), { coins: p.coins, udder: p.udder, bottles: p.bottles, inventory: p.inventory, xp: p.xp });
+  return out;
 }
 
 // save everyone (shutdown)
 const saveAll = () => Promise.all([...players.values()].filter((p) => p.user).map(saveProfile));
 const onlineCount = () => [...players.values()].filter((p) => p.ready).length;
 
-module.exports = { connect, startTimers, saveAll, onlineCount, clans };
+module.exports = { connect, startTimers, saveAll, onlineCount, clans, broadcastPrice, liveStats };

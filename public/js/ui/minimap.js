@@ -10,8 +10,9 @@ export class Minimap {
     this.ctx = canvas.getContext('2d');
   }
 
-  // cow: local cow, camYaw: camera yaw, colliders: world obstacles, remotes: other players, clan: my clan
-  draw({ cow, camYaw, colliders, remotes, clan }) {
+  // cow: local cow, camYaw: camera yaw, colliders: world obstacles, remotes: other players, clan: my clan,
+  // places: landmarks [{ x, z, icon }] (shown at the edge when far away)
+  draw({ cow, camYaw, colliders, remotes, clan, places = [] }) {
     const ctx = this.ctx, W = this.canvas.width, R = W / 2, sc = (R - 8) / RANGE;
     const sy = Math.sin(camYaw), cy = Math.cos(camYaw);
     // world offset -> minimap pixels
@@ -30,6 +31,19 @@ export class Minimap {
       const [x, y] = toScreen(c.x - cow.pos.x, c.z - cow.pos.z);
       ctx.beginPath(); ctx.arc(x, y, Math.max(1.2, c.r * sc), 0, Math.PI * 2); ctx.fill();
     }
+    // landmarks (barn, market): pinned to the edge when out of range
+    ctx.font = '15px "Segoe UI Emoji", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const pl of places) {
+      let dx = pl.x - cow.pos.x, dz = pl.z - cow.pos.z;
+      const d = Math.hypot(dx, dz), max = RANGE * 0.94;
+      if (d > max) { dx *= max / d; dz *= max / d; }
+      const [x, y] = toScreen(dx, dz);
+      ctx.globalAlpha = d > max ? 0.75 : 1;
+      ctx.fillText(pl.icon, x, y);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textBaseline = 'alphabetic';
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.beginPath(); ctx.arc(R, R, (R - 8) / 2, 0, Math.PI * 2); ctx.stroke();
     ctx.font = '600 10px Segoe UI, sans-serif';

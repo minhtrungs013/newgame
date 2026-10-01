@@ -8,6 +8,7 @@ import { Sky } from './world/sky.js';
 import { Environment, SEASON_INFO } from './world/environment.js';
 import { World } from './world/world.js';
 import { Rain, Snow, Leaves } from './world/weather-fx.js';
+import { Farm } from './world/farm.js';
 import { Cow, BUTT_HIT_AT, setCowModel } from './cow/cow.js';
 import { loadCowModel } from './cow/cowmodel.js';
 import { Net, NameTag } from './net/net.js';
@@ -17,10 +18,13 @@ import { Customizer } from './ui/customize.js';
 import { ClanPanel } from './ui/clan-ui.js';
 import { SeasonWheel } from './ui/season-wheel.js';
 import { Minimap } from './ui/minimap.js';
+import { MarketDialog, renderShopTab, renderBag } from './ui/market-ui.js';
+import { AdminPanel } from './ui/admin-ui.js';
 import { LEVEL_MAX, XP_MAX, levelInfo, stageName } from './game/levels.js';
 import {
   XP_GRAZE, XP_DRINK, XP_HUNGER, GRAZE_RATE, DRINK_RATE, FULL,
   HEALTH_DRAIN, HEALTH_REGEN, CARD_RANGE, QUALITY,
+  MILK_MIN_LEVEL, UDDER_MAX, BOTTLE_L, BOTTLES_MAX, MILK_TIME, inBarn, counterAt,
 } from './game/config.js';
 
 const $ = (id) => document.getElementById(id);
@@ -56,6 +60,7 @@ const sky = new Sky(scene);
 const terrain = new Terrain(scene);
 const grass = new Grass(scene);
 const world = new World(scene);
+const farm = new Farm(scene, world); // barn + market near the spawn meadow
 const water = new Water(scene);
 const crocs = new Crocs(scene);
 
@@ -89,6 +94,11 @@ const leaves = new Leaves(scene);
 
 // ---------- state ----------
 const state = {
+  // milk & coins (the server's numbers; see onEconomy)
+  eco: { coins: 0, udder: 0, bottles: 0, inventory: [], milkPrice: 5, loggedIn: false },
+  milking: 0,          // seconds left of the milking animation
+  inBarn: false,
+  counter: null,       // 'milk' | 'shop' when standing at a market counter
   started: false,
   quality: 'medium',
   cinematic: false,
@@ -151,11 +161,12 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'Escape' && state.started) {
     e.preventDefault();
-    if (!$('invite').classList.contains('hidden')) $('invite').classList.add('hidden');
+    if (market.open) market.close();
+    else if (!$('invite').classList.contains('hidden')) $('invite').classList.add('hidden');
     else toggleMenu();
     return;
   }
-  if (menuOpen) return;
+  if (menuOpen || market.open) return;
   if (state.dead) {
     if ((e.code === 'Enter' || e.code === 'Space' || e.code === 'NumpadEnter') && state.deathShown) { e.preventDefault(); respawn(); }
     return;
@@ -179,9 +190,12 @@ addEventListener('keydown', (e) => {
     net.send({ t: 'moo' });
     state.happy = Math.min(1, state.happy + 0.03);
   }
+  // at a market counter E opens it instead of grazing
+  if (k === 'KeyE' && state.started && state.counter && !cow.lying) { openCounter(state.counter); return; }
   if (k === 'KeyE' && state.started && Math.abs(cow.speed) < 0.6 && !cow.lying) {
     if (wantsMore()) cow.startGraze(1.5); else state.fullTimer = 2;
   }
+  if (k === 'KeyM' && state.started) startMilking();
   if (k === 'KeyG' && state.started) { toggleMenu(true, 'clan'); return; }
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
@@ -314,15 +328,16 @@ let menuPane = 'settings';
 function showPane(pane) {
   menuPane = pane;
   for (const b of document.querySelectorAll('.menu-tabs button')) b.classList.toggle('sel', b.dataset.pane === pane);
-  $('pane-settings').classList.toggle('hidden', pane !== 'settings');
-  $('pane-clan').classList.toggle('hidden', pane !== 'clan');
-  $('pane-controls').classList.toggle('hidden', pane !== 'controls');
+  for (const p of document.querySelectorAll('.menu-pane')) p.classList.toggle('hidden', p.id !== `pane-${pane}`);
   if (pane === 'clan') clanPanel.refresh();
+  if (pane === 'shop') renderShopTab($('pane-shop'), state.eco);
+  if (pane === 'bag') renderBag($('pane-bag'), state.eco);
+  if (pane === 'admin') adminPanel.refresh();
 }
 for (const b of document.querySelectorAll('.menu-tabs button')) b.addEventListener('click', () => showPane(b.dataset.pane));
 function toggleMenu(open = !menuOpen, pane = null) {
   if (open && pane) showPane(pane);
-  else if (open && !menuOpen && menuPane === 'clan') clanPanel.refresh();
+  else if (open && !menuOpen && ['clan', 'shop', 'bag', 'admin'].includes(menuPane)) showPane(menuPane);
   menuOpen = open;
   $('menu').classList.toggle('hidden', !open);
   state.keys.clear(); // don't keep walking with a key that was held when the menu opened
@@ -662,7 +677,13 @@ const net = new Net(scene, $('tags'), {
     state.clan = m.clan || null;
     net.myClanId = state.clan ? state.clan.id : null;
     showMyName();
+    state.eco.milkPrice = m.milkPrice ?? state.eco.milkPrice;
+    state.eco.loggedIn = !!m.profile;
+    farm.setPrice(state.eco.milkPrice);
     if (m.profile) {
+      Object.assign(state.eco, { coins: m.profile.coins || 0, udder: m.profile.udder || 0, bottles: m.profile.bottles || 0, inventory: m.profile.inventory || [] });
+      account.admin = !!m.profile.admin;
+      $('tab-admin').classList.toggle('hidden', !account.admin);
       setXp(m.profile.xp, true);
       state.food = m.profile.food; state.water = m.profile.water; state.health = m.profile.health;
       addChat('', `Chào mừng trở lại, ${m.profile.username}! Đã tải bò của bạn (Lv ${state.level}).`, true);
@@ -696,6 +717,7 @@ const net = new Net(scene, $('tags'), {
     if (!clan && before) addChat('', `Bạn đã rời clan [${before.tag}].`, true);
   },
   onClanUpdate() { if (menuOpen && menuPane === 'clan') clanPanel.refresh(); },
+  onEconomy(m) { handleEconomy(m); },
   onKicked(text) { addChat('', text || 'Bạn đã bị ngắt kết nối.', true); toast(text || 'Bạn đã bị ngắt kết nối.'); },
   // admin banner: a = { text, by } to show, null to hide; initial = state sent on join
   onAnnounce(a, initial) {
@@ -728,6 +750,7 @@ const net = new Net(scene, $('tags'), {
     if (a === 'croc') { crocs.attackAt(r.cow.pos); const sp = spatial(r.cow.pos, 60); if (sp.vol > 0) audio.snap(); return; }
     if (a === 'die') { r.cow.dead = true; r.cow.lying = false; r.tag.say('💀', 3); return; }
     if (a === 'respawn') { r.cow.dead = false; r.cow.setAge(0); r.target.a = 0; return; }
+    if (a === 'milk') { r.tag.say('🪣 Đang vắt sữa…', MILK_TIME); return; }
     const { vol } = spatial(r.cow.pos, 50);
     if (a === 'jump') {
       r.cow.onLand ??= (v) => audio.land(v, spatial(r.cow.pos, 50).vol);
@@ -888,13 +911,17 @@ function killCow(reason) {
   const m = state.distance;
   $('death-icon').textContent = icon;
   $('death-reason').textContent = text;
-  $('death-stats').textContent = `Đạt tới: Lv ${state.level} · ${stageName(state.level)} · Quãng đường: ${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km'}`;
+  state.deathBase = `Đạt tới: Lv ${state.level} · ${stageName(state.level)} · Quãng đường: ${m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(2) + ' km'}`;
+  renderDeathStats();
+  state.milking = 0;
+  market.close();
   setTimeout(() => { $('death').classList.remove('hidden'); state.deathShown = true; $('btn-respawn').focus(); }, 1800);
 }
 function respawn() {
   if (!state.dead) return;
   $('death').classList.add('hidden');
   state.dead = false; state.deathShown = false;
+  state.deathLoss = '';
   cow.dead = false; cow.deadK = 0; cow.lie = 0; cow.knock.set(0, 0); cow.vy = 0; cow.air = 0;
   // brand new calf at the spawn meadow
   state.level = -1; setXp(0, true);
@@ -923,7 +950,7 @@ function updateCow(dt) {
   const running = k.has('ShiftLeft') || k.has('ShiftRight');
   let targetSpeed = 0;
   if (state.started && cow.lying && (f || r)) toggleLie();
-  const canControl = state.started && !state.dead && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying;
+  const canControl = state.started && !state.dead && cow.stun <= 0 && cow.lie < 0.25 && !cow.lying && state.milking <= 0 && !market.open;
   if (canControl && (f || r)) {
     // camera-relative movement. S = walk backwards: keep facing away from the camera
     // and step back (instead of turning round); S+A/D backs away diagonally.
@@ -1218,6 +1245,12 @@ function updateHud(dt) {
   $('bar-grow').style.width = `${Math.round(li.frac * 100)}%`;
   $('bar-grow').parentElement.title = state.level >= LEVEL_MAX ? 'Cấp tối đa' : `${Math.floor(li.into)} / ${li.need} XP`;
   $('bar-water').style.width = `${Math.round(state.water * 100)}%`;
+  $('bar-milk').style.width = `${Math.round((state.eco.udder / UDDER_MAX) * 100)}%`;
+  $('bar-milk').parentElement.title = `Sữa trong bầu vú: ${fmtL(state.eco.udder)} / ${UDDER_MAX} L`;
+  document.body.classList.toggle('no-milk', state.level < MILK_MIN_LEVEL && state.eco.udder <= 0);
+  const nb = Math.ceil(state.eco.bottles / BOTTLE_L - 1e-6);
+  $('txt-bottles').textContent = nb ? `🍼 ${nb} bình · ${fmtL(state.eco.bottles)}` : '🍼 0 bình';
+  $('txt-coins').textContent = state.eco.loggedIn ? `🪙 ${state.eco.coins.toLocaleString('vi-VN')}` : '🪙 —';
   $('bar-health').style.width = `${Math.round(state.health * 100)}%`;
   const low = state.started && !state.dead && state.health < 0.35;
   $('hurt').style.opacity = low ? String(0.35 + (0.35 - state.health) * 1.8) : '0';
@@ -1226,6 +1259,10 @@ function updateHud(dt) {
   $('prompt').classList.toggle('danger', danger);
   const prompt = state.dead ? '' : danger ? '⚠️ Coi chừng cá sấu! Tránh xa bờ hồ ngay!'
     : cow.lying ? 'Đang nằm nghỉ… 💤  (Z để đứng dậy)'
+    : state.milking > 0 ? ''
+    : state.inBarn ? barnPrompt()
+    : state.counter === 'milk' ? (state.eco.bottles > 0 ? `Nhấn E để bán sữa (${fmtL(state.eco.bottles)} · ~${Math.round(state.eco.bottles * state.eco.milkPrice)} 🪙)` : 'Quầy thu mua sữa · nhấn E')
+    : state.counter === 'shop' ? 'Nhấn E để mở cửa hàng 🎁'
     : state.fullTimer > 0 ? (state.canDrink ? 'Bò uống đủ nước rồi 💧' : 'Bò no rồi, không ăn thêm được 🌾')
     : state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
   $('prompt').textContent = prompt;
@@ -1250,6 +1287,109 @@ function updateHud(dt) {
   }
 }
 
+// ---------- milk & coins ----------
+const fmtL = (l) => `${(Math.round(l * 10) / 10).toLocaleString('vi-VN')} L`;
+const market = new MarketDialog($('market'), {
+  onSell() { net.send({ t: 'sell' }); },
+  onBuy(id) { net.send({ t: 'buy', id }); },
+});
+const adminPanel = new AdminPanel($('pane-admin'), { getToken: () => account.token, toast });
+
+function barnPrompt() {
+  const e = state.eco;
+  if (!e.loggedIn) return '🏠 Chuồng bò · đăng nhập để vắt và bán sữa';
+  if (state.level < MILK_MIN_LEVEL) return `🏠 Chuồng bò · bò cần Lv ${MILK_MIN_LEVEL} mới có sữa (đang Lv ${state.level})`;
+  if (e.bottles >= BOTTLE_L * BOTTLES_MAX - 0.05) return '🍼 Các bình đã đầy · mang ra chợ bán nhé!';
+  if (e.udder < 1) return `Chưa đủ sữa (${fmtL(e.udder)}) · ăn no, uống đủ để bò ra sữa`;
+  return `Nhấn M để vắt sữa · Bầu vú ${fmtL(e.udder)} · Bình ${Math.ceil(e.bottles / BOTTLE_L - 1e-6)}/${BOTTLES_MAX}`;
+}
+
+// M in the barn: a 3 s milking animation, then the server moves the milk into bottles
+function startMilking() {
+  if (state.milking > 0 || state.dead || !state.inBarn) return;
+  const e = state.eco;
+  const why = !e.loggedIn ? 'Đăng nhập để vắt và bán sữa.'
+    : state.level < MILK_MIN_LEVEL ? `Bò cần đạt Lv ${MILK_MIN_LEVEL} mới có sữa.`
+    : e.bottles >= BOTTLE_L * BOTTLES_MAX - 0.05 ? 'Các bình đã đầy, mang ra chợ bán nhé!'
+    : e.udder < 1 ? 'Chưa có đủ sữa (cần ít nhất 1 lít).'
+    : cow.lying || Math.abs(cow.speed) > 0.6 || cow.stun > 0 ? 'Đứng yên để vắt sữa.' : null;
+  if (why) { toast(why); return; }
+  state.milking = MILK_TIME;
+  state.squirt = 0;
+  cow.grazeTimer = 0;
+  net.send({ t: 'milk-start' });
+  $('milkbar').classList.remove('hidden');
+}
+
+function openCounter(which) {
+  if (state.dead) return;
+  state.keys.clear();
+  cow.grazeTimer = 0;
+  market.show(which, state.eco);
+}
+
+function coinFx(text) {
+  const fx = $('coinfx');
+  fx.textContent = text;
+  fx.classList.remove('show'); void fx.offsetWidth; fx.classList.add('show');
+}
+
+// server -> client: wallet updates and the results of milk / sell / buy / death
+function handleEconomy(m) {
+  const e = state.eco;
+  if (m.coins !== undefined) { e.coins = m.coins; e.udder = m.udder; e.bottles = m.bottles; }
+  switch (m.t) {
+    case 'milked':
+      if (m.ok) { toast(`🍼 Đã vắt ${fmtL(m.amount)} sữa vào bình`); selfTag.say('Mooo~ 🥛', 2); audio.moo(0.6); }
+      else toast(m.text);
+      break;
+    case 'sold':
+      if (m.ok) { coinFx(`+${m.earned.toLocaleString('vi-VN')} 🪙`); audio.coins(); toast(`Đã bán ${fmtL(m.liters)} sữa, nhận ${m.earned} 🪙`); market.close(); }
+      else toast(m.text);
+      break;
+    case 'bought':
+      if (m.ok) { e.inventory = m.inventory || e.inventory; audio.coins(); toast(`🎒 Đã mua ${m.item.icon} ${m.item.name}`); market.bought(); }
+      else toast(m.text);
+      break;
+    case 'deathloss': {
+      const parts = [];
+      if (m.lostMilk > 0) parts.push(`🍼 Mất ${fmtL(m.lostMilk)} sữa`);
+      if (m.lostCoins > 0) parts.push(`🪙 Rớt ${m.lostCoins.toLocaleString('vi-VN')} xu`);
+      state.deathLoss = parts.join(' · ');
+      renderDeathStats();
+      break;
+    }
+    case 'price':
+      e.milkPrice = m.milkPrice;
+      farm.setPrice(m.milkPrice);
+      toast(`🥛 Giá sữa mới: ${m.milkPrice} 🪙 / lít`);
+      break;
+  }
+  market.update(e);
+  cow.setBottles(Math.ceil(e.bottles / BOTTLE_L - 1e-6));
+}
+
+// death screen: the run's summary plus what was lost (the server's message may come first)
+function renderDeathStats() {
+  $('death-stats').textContent = (state.deathBase || '') + (state.deathLoss ? `\n${state.deathLoss}` : '');
+}
+
+function updateFarm(dt) {
+  state.inBarn = state.started && !state.dead && inBarn(cow.pos.x, cow.pos.z);
+  state.counter = state.started && !state.dead ? counterAt(cow.pos.x, cow.pos.z) : null;
+  if (market.open && !state.counter) market.close(); // walked away
+  farm.update(dt, state.time, cow.pos, 1 - env.dayness);
+  if (state.milking > 0) {
+    const moved = !state.inBarn || cow.stun > 0 || state.dead;
+    if (moved) { state.milking = 0; $('milkbar').classList.add('hidden'); toast('Đã dừng vắt sữa.'); return; }
+    state.milking -= dt;
+    state.squirt -= dt;
+    if (state.squirt <= 0) { state.squirt = 0.32 + Math.random() * 0.08; audio.squirt(); }
+    $('milkbar-fill').style.width = `${Math.round((1 - Math.max(0, state.milking) / MILK_TIME) * 100)}%`;
+    if (state.milking <= 0) { $('milkbar').classList.add('hidden'); net.send({ t: 'milk' }); }
+  }
+}
+
 // ---------- loop ----------
 applySettings();
 env.setWeather('clear');
@@ -1265,6 +1405,7 @@ function tick(dt) {
   state.time += dt;
   pad.poll();
   updateCow(dt);
+  updateFarm(dt);
   terrain.update(cow.pos.x, cow.pos.z);
   world.update(cow.pos.x, cow.pos.z);
   water.update(cow.pos.x, cow.pos.z);
@@ -1281,11 +1422,11 @@ function tick(dt) {
   selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + (2.0 - 0.5 * cow.lie) * cow.size, cow.pos.z);
   selfTag.update(dt, selfTagPos, camera);
   renderer.render(scene, camera);
-  if (!state.cinematic) minimap.draw({ cow, camYaw: state.camYaw, colliders: world.colliders, remotes: net.remotes.values(), clan: state.clan });
+  if (!state.cinematic) minimap.draw({ cow, camYaw: state.camYaw, colliders: world.colliders, remotes: net.remotes.values(), clan: state.clan, places: farm.places });
   updateHud(dt);
   // rumble the controller on bumps, hits and bites
   if (settings.rumble && state.shake > prevShake + 0.05) pad.rumble(state.shake, 120 + state.shake * 300);
   prevShake = state.shake;
 }
 requestAnimationFrame(frame);
-window.__game = { pad, state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn, camera, pickCow };
+window.__game = { farm, market, pad, state, cow, env, world, grass, water, crocs, net, customizer, tick, killCow, respawn, camera, pickCow };

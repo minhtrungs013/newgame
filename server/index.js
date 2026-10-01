@@ -19,7 +19,7 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ publicUrl: getPublicUrl(), lan: lanUrls(), players: game.onlineCount() }));
   }
   if (url.startsWith('/api/')) {
-    handleApi(req, res, url, game.clans).catch((e) => { console.error(e); sendJson(res, 500, { error: 'Lỗi server.' }); });
+    handleApi(req, res, url, game).catch((e) => { console.error(e); sendJson(res, 500, { error: 'Lỗi server.' }); });
     return;
   }
   serveStatic(req, res, url);

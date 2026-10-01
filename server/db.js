@@ -5,6 +5,9 @@
 //   sessions  { _id: token, username, createdAt, expiresAt }      <- expired ones are deleted automatically
 //   clans     { _id: id, name, nameLower, tag, color, desc, open, createdAt,
 //               members: [{ username, role, joinedAt }], requests: [{ username, requestedAt }] }
+//   shop_items   { _id, icon, name, desc, price, stock (null = unlimited), sold, startAt, endAt, active, createdBy, createdAt, updatedAt }
+//   transactions { _id, username, type: sell_milk | buy | death_loss, coins (+/-), balanceAfter, liters, itemId, itemName, at }
+//   settings     { _id: 'economy', milkPrice }
 //   meta      { _id: 'schema', version, migratedAt }
 //
 // MONGODB_URI set (MongoDB Atlas, used on Render) -> those collections in <MONGODB_DB>.
@@ -14,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const COLLECTIONS = ['users', 'players', 'sessions', 'clans', 'meta'];
+const COLLECTIONS = ['users', 'players', 'sessions', 'clans', 'shop_items', 'transactions', 'settings', 'meta'];
 const SCHEMA_VERSION = 2;
 const matches = (doc, q) => Object.entries(q).every(([k, v]) => doc[k] === v);
 
@@ -38,7 +41,14 @@ class FileCollection {
   }
   async del(id) { this.docs.delete(id); this._flush(); }
   async findOne(q) { for (const d of this.docs.values()) if (matches(d, q)) return structuredClone(d); return null; }
-  async find(q = {}) { return [...this.docs.values()].filter((d) => matches(d, q)).map((d) => structuredClone(d)); }
+  // opts: { sort: { field: 1 | -1 }, limit }
+  async find(q = {}, opts = {}) {
+    let out = [...this.docs.values()].filter((d) => matches(d, q));
+    const [[key, dir] = []] = Object.entries(opts.sort || {});
+    if (key) out.sort((a, b) => (a[key] > b[key] ? dir : a[key] < b[key] ? -dir : 0));
+    if (opts.limit) out = out.slice(0, opts.limit);
+    return out.map((d) => structuredClone(d));
+  }
   async count() { return this.docs.size; }
   // write at most once a second, atomically (tmp file + rename)
   _flush() {
@@ -89,7 +99,12 @@ class MongoCollection {
   async update(id, fields) { return (await this.col.updateOne({ _id: id }, { $set: fields })).matchedCount > 0; }
   async del(id) { await this.col.deleteOne({ _id: id }); }
   findOne(q) { return this.col.findOne(q); }
-  find(q = {}) { return this.col.find(q).toArray(); }
+  find(q = {}, opts = {}) {
+    let c = this.col.find(q);
+    if (opts.sort) c = c.sort(opts.sort);
+    if (opts.limit) c = c.limit(opts.limit);
+    return c.toArray();
+  }
   count() { return this.col.estimatedDocumentCount(); }
 }
 
@@ -109,6 +124,8 @@ class MongoDb {
     await this.db.collection('clans').createIndex({ nameLower: 1 }, { unique: true });
     await this.db.collection('clans').createIndex({ tag: 1 }, { unique: true });
     await this.db.collection('users').createIndex({ clanId: 1 });
+    await this.db.collection('transactions').createIndex({ at: -1 });
+    await this.db.collection('transactions').createIndex({ username: 1, at: -1 });
   }
   // old format: collection "kv" = { _id: key, v, exp }
   async legacy() {

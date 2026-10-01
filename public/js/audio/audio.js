@@ -294,6 +294,28 @@ export class AudioSys {
     o.start(t); o.stop(t + 0.1);
   }
 
+  // one squirt of milk into the bucket
+  squirt() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this.ctx.currentTime;
+    const f = this._noiseBurst(t, 'bandpass', 2600, 2.5, 0.07, 0.16);
+    f.frequency.setValueAtTime(3200, t);
+    f.frequency.exponentialRampToValueAtTime(1500, t + 0.15);
+  }
+
+  // coins: two bright pings
+  coins() {
+    if (!this.ctx || !this.enabled) return;
+    const t = this.ctx.currentTime;
+    for (const [i, f] of [[0, 1320], [1, 1760]]) {
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = 'triangle'; o.frequency.value = f;
+      this._env(g, t + i * 0.09, 0.004, 0.12, 0.35);
+      o.connect(g).connect(this.master);
+      o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.4);
+    }
+  }
+
   // hoof splashing through shallow water
   splash(vol = 1) {
     if (!this.ctx || !this.enabled || vol <= 0.01) return;

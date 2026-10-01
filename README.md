@@ -22,6 +22,8 @@ server/                code chạy trên server (Node.js)
   api.js               /api/register, /api/login, /api/logout, /api/me, /api/clan/*
   accounts.js          băm mật khẩu, phiên đăng nhập, lưu tiến trình
   clans.js             tạo / quản lý clan
+  economy.js           sữa, bán sữa, cửa hàng, mất xu khi chết
+  admin.js             API quản trị (giá sữa, vật phẩm, giao dịch, người chơi)
   db.js                MongoDB hoặc file JSON (users, players, sessions, clans)
   world-clock.js       ngày/đêm, mùa, thời tiết ngẫu nhiên
   websocket.js         WebSocket tự viết (RFC 6455)
@@ -32,9 +34,9 @@ public/                mọi thứ trình duyệt tải về
   index.html, css/style.css
   js/main.js           khởi động game, vòng lặp, điều khiển, HUD
   js/game/             levels.js, config.js (luật chơi + preset đồ hoạ)
-  js/world/            terrain, grass, water, sky, environment (mùa/thời tiết), world (cây, đá), crocs, weather-fx (mưa, tuyết, lá)
+  js/world/            terrain, grass, water, sky, environment (mùa/thời tiết), world (cây, đá), crocs, weather-fx (mưa, tuyết, lá), farm (chuồng bò + chợ + NPC)
   js/cow/              cow.js (con bò + hoạt ảnh), cowmodel.js (model 3D + gắn xương)
-  js/ui/               customize (tạo nhân vật), clan-ui, season-wheel, minimap
+  js/ui/               customize (tạo nhân vật), clan-ui, season-wheel, minimap, market-ui (quầy sữa, cửa hàng, túi đồ), admin-ui
   js/net/net.js        kết nối multiplayer, bò của người khác, bảng tên
   js/input/gamepad.js  tay cầm
   js/audio/audio.js    âm thanh tự tổng hợp
@@ -150,6 +152,9 @@ Mật khẩu được băm bằng scrypt (không lưu dạng chữ thường).
 | `players` | Tiến trình chơi: `name`, `look`, `level`, `xp`, `food`, `water`, `health`, vị trí `x z h`, `updatedAt` |
 | `sessions` | Phiên đăng nhập (token), tự xoá khi hết hạn 30 ngày (`expiresAt`) |
 | `clans` | Clan: `name`, `tag` (không trùng), `color`, `desc`, `open`, `members` (`username`, `role`, `joinedAt`), `requests` |
+| `shop_items` | Vật phẩm cửa hàng (admin thêm) |
+| `transactions` | Lịch sử bán sữa / mua đồ / rớt xu khi chết |
+| `settings` | Giá sữa |
 | `meta` | Phiên bản cấu trúc dữ liệu |
 
 `_id` của `users` / `players` là tên đăng nhập viết thường. Dữ liệu kiểu cũ (collection `kv` / `data/store.json`) được chuyển sang tự động ở lần chạy đầu và vẫn giữ lại làm bản sao lưu — kiểm tra xong có thể xoá.
@@ -166,6 +171,20 @@ MONGODB_DB=newgame
 **Trên Render**: Service → **Environment** → thêm `MONGODB_URI` và `MONGODB_DB` → Save.
 Trong MongoDB Atlas → **Network Access** phải cho phép `0.0.0.0/0` (Render không có IP cố định).
 Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
+
+## Sữa, xu và cửa hàng
+
+1. **Sữa:** bò **Lv 20+** đang no và đủ nước (trên 40%) tự ra sữa vào bầu vú (Lv 20 ≈ 1 lít/90 giây, Lv 30 ≈ 1 lít/50 giây, tối đa 10 lít) — thanh **🥛 Sữa** trên bảng trạng thái.
+2. **Vắt sữa:** vào **🏠 chuồng bò** (gần chỗ xuất phát, có icon trên minimap), nhấn **M** (tay cầm: D-pad →) → sữa vào bình mang trên lưng (tối đa 3 bình × 5 lít).
+3. **Bán sữa:** mang bình tới **🏪 chợ**, đứng trước **quầy thu mua sữa** nhấn **E** → nhận **🪙 xu** theo giá do admin đặt (bảng giá ở chợ).
+4. **Cửa hàng:** quầy bên cạnh (nhấn **E**) bán vật phẩm admin thêm vào; đồ mua về nằm trong **Esc → 🎒 Túi đồ** (hiện chỉ để lưu giữ). Esc → 🎁 Cửa hàng để xem trước.
+5. **Chết:** mất hết sữa đang có và **rớt 50% số xu** (đồ trong túi không mất).
+
+Mọi thứ liên quan tới xu (sữa trong bầu vú, vắt, bán, mua, mất khi chết) do server tính và kiểm tra vị trí — client không tự cộng được. Chơi khách không vắt / bán / mua được.
+
+**Admin:** đặt biến môi trường `ADMIN_USERS` (danh sách tên đăng nhập, cách nhau dấu phẩy, ví dụ `ADMIN_USERS=trungdo`) trên Render hoặc trong `.env`; hoặc đặt `role: "admin"` cho tài khoản trong collection `users`. Admin thấy tab **Esc → 🛠️ Quản trị**: giá sữa, thêm / sửa / ẩn / xoá vật phẩm (icon, tên, mô tả, giá, số lượng, thời gian bán), lịch sử giao dịch, xu & túi đồ của người chơi. Admin tài khoản cũng dùng được /ONADMIN mà không cần mã.
+
+Dữ liệu: `players` (`coins`, `udder`, `bottles`, `inventory`), `shop_items`, `transactions` (bán sữa, mua đồ, rớt xu khi chết), `settings` (giá sữa).
 
 ## Clan
 
