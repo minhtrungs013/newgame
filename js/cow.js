@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import { COW_MODEL, makeModelHide } from './cowmodel.js';
+
+// use the realistic 3D model (when it loaded) instead of the procedural cow
+let useModel = true;
+export function setCowModel(on) { useModel = on; }
 
 // A cow's appearance ("look"). Kept small & JSON-friendly so it can be sent over the network.
 export const PATTERNS = ['none', 'few', 'many', 'patches'];
@@ -264,6 +269,7 @@ function skullGeometry() {
 export class Cow {
   constructor(scene, { look, coat, seed = 11, age = 1 } = {}) {
     const L = this.look = normalizeLook(look || PRESETS[coat] || DEFAULT_LOOK);
+    const model = this.model = useModel ? COW_MODEL : null;
     this.adultSize = L.size;
     this.scene = scene;
     this.root = new THREE.Group();
@@ -281,7 +287,9 @@ export class Cow {
     const pupil = new THREE.MeshStandardMaterial({ color: 0x050303, roughness: 0.05 });
     this.materials = [hide, skin, udderMat, earInner, hornMat, hoof, dark, eyeMat, pupil];
 
+    let skip = !!model;
     const M = (geo, mat, parent, x = 0, y = 0, z = 0) => {
+      if (skip) { geo.dispose(); return new THREE.Object3D(); }
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       m.castShadow = true;
@@ -443,8 +451,10 @@ export class Cow {
     const sw = M(new THREE.SphereGeometry(1, 14, 10), hide, parent, 0, -0.2, 0);
     sw.scale.set(0.055, 0.17, 0.05);
 
+    skip = false;
+    if (model) this._applyModel(model, L, M);
     this._buildAccessory(L, M);
-    this._bakeRestPositions();
+    if (!model) this._bakeRestPositions();
 
     // state
     this.pos = new THREE.Vector3();
@@ -500,14 +510,16 @@ export class Cow {
     this.root.scale.setScalar(this.size);
     const young = 1 - age;
     this.head.scale.setScalar(1 + 0.32 * young);
-    const sy = 1 - 0.1 * young, sz = 1 - 0.14 * young;
-    this.barrel.scale.set(1 - 0.06 * young, sy, sz);
-    // keep the tail attached to the (shorter) rump
-    this.tailRoot.position.set(0, 1.05 + 0.2 * sy, -0.05 - 0.95 * sz);
+    if (!this.model) {
+      const sy = 1 - 0.1 * young, sz = 1 - 0.14 * young;
+      this.barrel.scale.set(1 - 0.06 * young, sy, sz);
+      // keep the tail attached to the (shorter) rump
+      this.tailRoot.position.set(0, 1.05 + 0.2 * sy, -0.05 - 0.95 * sz);
+    }
     const hornK = smooth(0.25, 0.9, age);
     for (const h of this.horns) {
       h.visible = this.look.horns !== 'none' && hornK > 0.02;
-      h.scale.setScalar(Math.max(0.001, hornK));
+      h.scale.setScalar(Math.max(0.001, hornK) * (h.userData.k || 1));
     }
     const udderK = smooth(0.7, 1, age);
     this.udder.visible = udderK > 0.02;
@@ -570,6 +582,68 @@ export class Cow {
     return landed;
   }
 
+  // Realistic model: move the pivots onto the model's joints, skin the body to them
+  // and hang the rigid parts (hooves, eyes, horns) on their pivots.
+  _applyModel(model, L, M) {
+    const rig = model.rig;
+    this.legs.forEach((leg, i) => {
+      const r = rig.legs[i];
+      leg.hip.position.copy(r.hip);
+      leg.knee.position.copy(r.knee).sub(r.hip);
+    });
+    this.neck.position.copy(rig.neck);
+    this.head.position.copy(rig.head).sub(rig.neck);
+
+    const pivots = [this.body, ...this.legs.map((l) => l.hip), ...this.legs.map((l) => l.knee), this.neck, this.head];
+    const bones = pivots.map((p) => { const b = new THREE.Bone(); p.add(b); return b; });
+    this.root.updateMatrixWorld(true);
+
+    const hide = makeModelHide(L);
+    this.materials.push(hide);
+    const mesh = new THREE.SkinnedMesh(model.body, hide);
+    mesh.userData.shared = true;
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.frustumCulled = false; // its bounds are taken from one pose only; grazing / lying reach outside them
+    this.root.add(mesh);
+    mesh.updateMatrixWorld(true);
+    mesh.bind(new THREE.Skeleton(bones));
+    this.skin = mesh;
+
+    // rigid part: shared geometry in cow space, placed relative to its pivot's rest position
+    const rigid = (geo, mat, pivot) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.userData.shared = true;
+      m.castShadow = true;
+      m.position.copy(pivot.getWorldPosition(new THREE.Vector3()).negate());
+      pivot.add(m);
+      return m;
+    };
+    const hoofMat = new THREE.MeshStandardMaterial({ color: 0x2a221e, roughness: 0.55 });
+    this.materials.push(hoofMat);
+    model.hooves.forEach((g, i) => rigid(g, hoofMat, this.legs[i].knee));
+    for (const e of model.eyes) {
+      const em = new THREE.MeshStandardMaterial({ map: e.map || null, color: e.map ? 0xffffff : 0x2a1a10, roughness: 0.1 });
+      this.materials.push(em);
+      rigid(e.geo, em, this.head);
+    }
+    // horns hang on a pivot at the poll so they can be hidden / grown / made longer
+    for (const h of this.horns) h.parent.remove(h);
+    this.horns = [];
+    if (model.horns) {
+      const hornPivot = new THREE.Group();
+      this.head.add(hornPivot);
+      const hm = new THREE.MeshStandardMaterial({ map: model.horns.map || null, color: model.horns.map ? 0xffffff : 0xe8dcc0, roughness: 0.45 });
+      this.materials.push(hm);
+      const m = new THREE.Mesh(model.horns.geo, hm);
+      m.userData.shared = true; m.castShadow = true;
+      m.position.copy(rig.head).negate();
+      hornPivot.add(m);
+      hornPivot.userData.k = L.horns === 'long' ? 1.4 : 1;
+      hornPivot.visible = L.horns !== 'none';
+      this.horns.push(hornPivot);
+    }
+  }
+
   _buildAccessory(L, M) {
     if (L.acc === 'none') return;
     const mat = (color, extra = {}) => {
@@ -579,21 +653,23 @@ export class Cow {
     };
     const accMat = mat(L.accColor);
     // ring around the middle of the neck, following its forward-up tilt
+    // neck cross-section the collar wraps around (neck space); the model measures its own
+    const C = this.model ? this.model.rig.collar : { y: 0.06, z: 0.26, rx: 0.226, ry: 0.31, tilt: 0.25 };
     const collar = (radius, tube, material) => {
-      const ring = M(new THREE.TorusGeometry(radius, tube, 10, 32), material, this.neck, 0, 0.06, 0.26);
-      ring.rotation.x = -0.25;
-      ring.scale.set(0.78, 1.08, 1);
+      const ring = M(new THREE.TorusGeometry(radius, tube, 10, 32), material, this.neck, 0, C.y, C.z);
+      ring.rotation.x = -C.tilt;
+      ring.scale.set(C.rx / radius, C.ry / radius, 1);
       return ring;
     };
     if (L.acc === 'bell') {
       collar(0.29, 0.03, mat(0x5a3a22, { roughness: 0.8 }));
       const gold = mat(0xd4a93a, { metalness: 0.85, roughness: 0.3 });
-      const bell = M(new THREE.SphereGeometry(0.075, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), gold, this.neck, 0, -0.28, 0.33);
+      const bell = M(new THREE.SphereGeometry(0.075, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), gold, this.neck, 0, C.y - C.ry - 0.03, C.z + 0.07);
       bell.scale.y = 1.25;
-      M(new THREE.SphereGeometry(0.022, 8, 6), gold, this.neck, 0, -0.36, 0.33);
+      M(new THREE.SphereGeometry(0.022, 8, 6), gold, this.neck, 0, C.y - C.ry - 0.11, C.z + 0.07);
     } else if (L.acc === 'scarf') {
       collar(0.29, 0.07, accMat).scale.z = 1.5;
-      const tail = M(new THREE.BoxGeometry(0.12, 0.34, 0.04), accMat, this.neck, 0.1, -0.33, 0.36);
+      const tail = M(new THREE.BoxGeometry(0.12, 0.34, 0.04), accMat, this.neck, 0.1, C.y - C.ry - 0.08, C.z + 0.1);
       tail.rotation.set(0.3, 0, 0.25);
     } else if (L.acc === 'hat') {
       // Vietnamese conical hat (nón lá) with a coloured chin strap
@@ -619,7 +695,7 @@ export class Cow {
 
   dispose() {
     this.scene.remove(this.root);
-    this.root.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    this.root.traverse(o => { if (o.geometry && !o.userData.shared) o.geometry.dispose(); });
     for (const m of this.materials) m.dispose();
   }
 
@@ -693,11 +769,14 @@ export class Cow {
     this.graze += (grazeTarget - this.graze) * Math.min(1, dt * 2.5);
     const chew = this.graze > 0.8 ? Math.sin(this.time * 9) * 0.04 : 0;
     const headBob = moving ? Math.sin(this.phase * 2) * 0.04 : Math.sin(this.time * 0.6) * 0.03;
-    this.neck.rotation.x = 0.05 + this.graze * 1.15 + headBob + windup * 0.55 + thrust * 0.75 - airK * 0.15;
+    // the model's neck pivots at the withers: bend it a bit more and tip the head back up so
+    // the muzzle lands on the grass in front of the hooves instead of tucking under the chest
+    const reach = this.model ? 1.13 : 1;
+    this.neck.rotation.x = 0.05 + this.graze * 1.15 * reach + headBob + windup * 0.55 + thrust * 0.75 - airK * 0.15;
     // lying: head held a bit lower, slowly chewing the cud
     this.neck.rotation.x += lieK * 0.12;
     const cud = lieK * Math.sin(this.time * 5.5) * 0.025;
-    this.head.rotation.x = -0.05 + this.graze * 0.3 + chew + thrust * 0.35 + cud;
+    this.head.rotation.x = -0.05 + this.graze * (this.model ? -0.6 : 0.3) + chew + thrust * 0.35 + cud;
     this.head.rotation.y = moving ? 0 : Math.sin(this.time * 0.35) * 0.25 * (1 - this.graze);
 
     // dead: roll onto the side, legs stiff, head down

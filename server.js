@@ -9,7 +9,7 @@ const os = require('os');
 
 const PORT = process.env.PORT || 5173;
 const ROOT = __dirname;
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.webp': 'image/webp', '.JPG': 'image/jpeg', '.3ds': 'application/octet-stream' };
 const MAX_PLAYERS = 32;
 // Admin announcements (/ONADMIN <text>, /OFFADMIN). If ADMIN_KEY is set, a player must
 // first unlock admin commands with /ADMIN <key>; otherwise anyone may use them.
@@ -202,7 +202,7 @@ function lanUrls() {
 // ---------- static files ----------
 // Only the game's own files are served (never server.js, .bat, config...), since
 // the server may be reachable from the Internet through ngrok.
-const PUBLIC_FILE = /^\/(index\.html|style\.css|js\/[\w-]+\.js)$/;
+const PUBLIC_FILE = /^\/(index\.html|style\.css|js\/[\w-]+\.js|cowModel\/[\w-]+\.(3ds|JPG))$/;
 const server = http.createServer((req, res) => {
   let url;
   try { url = decodeURIComponent(req.url.split('?')[0]); } catch { res.writeHead(400); return res.end(); }

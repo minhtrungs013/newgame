@@ -6,7 +6,7 @@
   <title>Cow Meadow</title>
   <link rel="stylesheet" href="style.css" />
   <script type="importmap">
-    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/" } }
   </script>
 </head>
 <body>
@@ -157,6 +157,7 @@
             </select>
           </label>
           <label class="m-row"><span>Góc nhìn (FOV)</span><input id="m-fov" type="range" min="45" max="80" step="1" /><b id="m-fov-v"></b></label>
+          <label class="m-row"><span>Bò 3D chi tiết</span><input id="m-realcow" type="checkbox" /></label>
           <h3>Âm thanh</h3>
           <label class="m-row"><span>Bật âm thanh</span><input id="m-sound" type="checkbox" /></label>
           <label class="m-row"><span>Âm lượng</span><input id="m-volume" type="range" min="0" max="1" step="0.05" /><b id="m-volume-v"></b></label>

@@ -5,3 +5,6 @@ ngrok-domain.txt
 data/
 .env
 .env.*
+
+# ArchiCAD library copy of the cow model (not used by the game)
+cowModel/*.gsm

@@ -6,7 +6,8 @@ import { LEVEL_MAX, XP_MAX, levelInfo, stageName } from './levels.js';
 
 const CARD_RANGE = 10;   // metres: how close you must be to inspect another cow
 import { Grass } from './grass.js';
-import { Cow, BUTT_HIT_AT } from './cow.js';
+import { Cow, BUTT_HIT_AT, setCowModel } from './cow.js';
+import { loadCowModel } from './cowmodel.js';
 import { Sky } from './sky.js';
 import { Environment } from './environment.js';
 import { World } from './world.js';
@@ -67,6 +68,16 @@ const crocs = new Crocs(scene);
 // health: drains while starving or parched; at 0 the cow dies
 const HEALTH_DRAIN = 1 / 90;  // per second for each unmet need (hunger / thirst)
 const HEALTH_REGEN = 1 / 60;  // per second when fed and watered
+// realistic cow model (falls back to the procedural cow if it can't load or is turned off)
+{
+  let real = true;
+  try { real = JSON.parse(localStorage.getItem('cow.settings') || '{}').realCow !== false; } catch {}
+  setCowModel(real);
+  if (real) {
+    try { await Promise.race([loadCowModel(), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 15000))]); }
+    catch (e) { console.warn('cow model not loaded, using the procedural cow', e); setCowModel(false); }
+  }
+}
 let cow = new Cow(scene);
 const audio = new AudioSys();
 const onStep = (sp) => {
@@ -355,7 +366,7 @@ $('btn-sound').addEventListener('click', (e) => { setSetting('sound', !settings.
 
 // ---------- settings (Esc menu), saved per browser ----------
 const settings = {
-  quality: 'medium', fov: 55, sound: true, volume: 0.8, sens: 1, invert: false, rumble: true,
+  quality: 'medium', fov: 55, sound: true, volume: 0.8, sens: 1, invert: false, rumble: true, realCow: true,
   minimap: true, status: true, tags: true,
 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('cow.settings') || '{}')); } catch {}
@@ -386,6 +397,7 @@ function applySettings(key = null) {
   if (all || key === 'sens') { $('m-sens').value = settings.sens; $('m-sens-v').textContent = `${settings.sens.toFixed(1)}×`; }
   if (all || key === 'invert') $('m-invert').checked = settings.invert;
   if (all || key === 'rumble') $('m-rumble').checked = settings.rumble;
+  if (all || key === 'realCow') $('m-realcow').checked = settings.realCow;
   for (const k of ['minimap', 'status', 'tags']) {
     if (all || key === k) { document.body.classList.toggle(`hide-${k}`, !settings[k]); $(`m-${k}`).checked = settings[k]; }
   }
@@ -402,6 +414,8 @@ $('m-volume').addEventListener('input', (e) => setSetting('volume', Number(e.tar
 $('m-sens').addEventListener('input', (e) => setSetting('sens', Number(e.target.value)));
 $('m-invert').addEventListener('change', (e) => setSetting('invert', e.target.checked));
 $('m-rumble').addEventListener('change', (e) => setSetting('rumble', e.target.checked));
+// the cow model is picked when the page loads
+$('m-realcow').addEventListener('change', (e) => { setSetting('realCow', e.target.checked); toast('Tải lại trang (F5) để đổi kiểu bò'); });
 for (const k of ['minimap', 'status', 'tags']) $(`m-${k}`).addEventListener('change', (e) => setSetting(k, e.target.checked));
 
 let menuOpen = false;

@@ -74,6 +74,12 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · 
 - Thời tiết **ngẫu nhiên** mỗi 4 phút theo xác suất của từng mùa.
 - Vòng tròn mùa ở góc trên bên phải: vị trí trong năm, giờ trong ngày, thời tiết hiện tại.
 
+## Mô hình bò 3D
+
+- Bò dùng model 3D trong `cowModel/` (`cow.3ds` + texture `.JPG`, nguồn archibase.net). Model không có xương nên game tự gắn xương khi tải: 4 chân (hông + gối), cổ, đầu; móng, mắt, sừng gắn cứng theo chân/đầu. Mọi động tác (đi, chạy, lùi, nhảy, húc, gặm cỏ, nằm, chết) chạy trên model này.
+- Kiểu "Bò sữa" dùng nguyên texture; các màu khác nhuộm lại texture (vùng sáng = màu lông, vùng tối = màu đốm, "Trơn" = một màu).
+- Đuôi của model liền với mông nên không vẫy được. Máy yếu có thể tắt "Bò 3D chi tiết" trong Esc → Cài đặt để dùng bò cũ (tải lại trang để áp dụng).
+
 ## Bản đồ
 
 Đồng cỏ vô tận với rừng cây (cây tán tròn, thông, bạch dương), bụi rậm, bụi hoa, đá, khúc gỗ đổ, hàng rào và **hồ nước** có lau sậy, lá súng. Luôn có một hồ gần chỗ xuất phát; minimap hiện các hồ màu xanh.
