@@ -7,4 +7,4 @@ data/
 .env.*
 
 # ArchiCAD library copy of the cow model (not used by the game)
-cowModel/*.gsm
+public/models/cow/*.gsm

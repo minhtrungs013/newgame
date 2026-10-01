@@ -452,7 +452,7 @@ export class Cow {
     sw.scale.set(0.055, 0.17, 0.05);
 
     skip = false;
-    if (model) this._applyModel(model, L, M);
+    if (model) this._applyModel(model, L);
     this._buildAccessory(L, M);
     if (!model) this._bakeRestPositions();
 
@@ -584,7 +584,7 @@ export class Cow {
 
   // Realistic model: move the pivots onto the model's joints, skin the body to them
   // and hang the rigid parts (hooves, eyes, horns) on their pivots.
-  _applyModel(model, L, M) {
+  _applyModel(model, L) {
     const rig = model.rig;
     this.legs.forEach((leg, i) => {
       const r = rig.legs[i];

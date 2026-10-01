@@ -158,10 +158,21 @@ async function migrate(db, levelOf) {
 async function openDb({ levelOf }) {
   const db = process.env.MONGODB_URI
     ? new MongoDb(process.env.MONGODB_URI, process.env.MONGODB_DB || 'newgame')
-    : new FileDb(process.env.DATA_DIR || path.join(__dirname, 'data'));
+    : new FileDb(process.env.DATA_DIR || path.join(__dirname, '..', 'data'));
   await db.connect();
   await migrate(db, levelOf);
   return db;
 }
 
-module.exports = { openDb };
+// one shared connection; connects on first use and retries on the next call if it failed
+let dbPromise = null;
+function getDb() {
+  if (!dbPromise) {
+    const { levelOf } = require('./config');
+    dbPromise = openDb({ levelOf });
+    dbPromise.catch(() => { dbPromise = null; });
+  }
+  return dbPromise;
+}
+
+module.exports = { getDb };

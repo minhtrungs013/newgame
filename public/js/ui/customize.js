@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Cow, PRESETS, normalizeLook, randomLook } from './cow.js';
+import { Cow, PRESETS, normalizeLook, randomLook } from '../cow/cow.js';
 
 const STORAGE_KEY = 'cow.look';
 

@@ -1,4 +1,4 @@
-// Level system (0..30). The same formula lives in server.js - keep them identical.
+// Level system (0..30). The same formula lives in server/config.js - keep them identical.
 // XP needed to go from level L to L+1 grows slowly: 40, 48, 56, ...
 export const LEVEL_MAX = 30;
 export const xpNeed = (level) => 40 + 8 * level;

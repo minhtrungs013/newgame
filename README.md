@@ -11,6 +11,37 @@ Bấm đúp **`start.bat`**. File này sẽ:
 2. mở trình duyệt vào `http://localhost:5173`
 3. nếu máy có ngrok thì mở tunnel ra Internet
 
+## Cấu trúc thư mục
+
+```
+server.js              điểm khởi động (node server.js) -> server/index.js
+server/                code chạy trên server (Node.js)
+  index.js             HTTP server: file tĩnh, API, WebSocket, tắt server an toàn
+  config.js            cấu hình + luật chơi (level, XP, sát thương...)
+  game.js              người chơi online, giao thức tin nhắn, chat/admin, snapshot, autosave
+  api.js               /api/register, /api/login, /api/logout, /api/me, /api/clan/*
+  accounts.js          băm mật khẩu, phiên đăng nhập, lưu tiến trình
+  clans.js             tạo / quản lý clan
+  db.js                MongoDB hoặc file JSON (users, players, sessions, clans)
+  world-clock.js       ngày/đêm, mùa, thời tiết ngẫu nhiên
+  websocket.js         WebSocket tự viết (RFC 6455)
+  static.js            chỉ phục vụ file trong public/
+  public-url.js        link ngrok / Render / LAN cho nút "Mời bạn"
+  util.js, http-util.js
+public/                mọi thứ trình duyệt tải về
+  index.html, css/style.css
+  js/main.js           khởi động game, vòng lặp, điều khiển, HUD
+  js/game/             levels.js, config.js (luật chơi + preset đồ hoạ)
+  js/world/            terrain, grass, water, sky, environment (mùa/thời tiết), world (cây, đá), crocs, weather-fx (mưa, tuyết, lá)
+  js/cow/              cow.js (con bò + hoạt ảnh), cowmodel.js (model 3D + gắn xương)
+  js/ui/               customize (tạo nhân vật), clan-ui, season-wheel, minimap
+  js/net/net.js        kết nối multiplayer, bò của người khác, bảng tên
+  js/input/gamepad.js  tay cầm
+  js/audio/audio.js    âm thanh tự tổng hợp
+  models/cow/          model bò 3D + texture
+data/                  dữ liệu khi chơi local không có MongoDB (không commit)
+```
+
 ## Chơi với bạn bè
 
 Trong game bấm nút **Mời bạn** (góc trên bên phải) để copy link.
@@ -76,7 +107,7 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · 
 
 ## Mô hình bò 3D
 
-- Bò dùng model 3D trong `cowModel/` (`cow.3ds` + texture `.JPG`, nguồn archibase.net). Model không có xương nên game tự gắn xương khi tải: 4 chân (hông + gối), cổ, đầu; móng, mắt, sừng gắn cứng theo chân/đầu. Mọi động tác (đi, chạy, lùi, nhảy, húc, gặm cỏ, nằm, chết) chạy trên model này.
+- Bò dùng model 3D trong `public/models/cow/` (`cow.3ds` + texture `.JPG`, nguồn archibase.net). Model không có xương nên game tự gắn xương khi tải: 4 chân (hông + gối), cổ, đầu; móng, mắt, sừng gắn cứng theo chân/đầu. Mọi động tác (đi, chạy, lùi, nhảy, húc, gặm cỏ, nằm, chết) chạy trên model này.
 - Kiểu "Bò sữa" dùng nguyên texture; các màu khác nhuộm lại texture (vùng sáng = màu lông, vùng tối = màu đốm, "Trơn" = một màu).
 - Đuôi của model liền với mông nên không vẫy được. Máy yếu có thể tắt "Bò 3D chi tiết" trong Esc → Cài đặt để dùng bò cũ (tải lại trang để áp dụng).
 

@@ -68,7 +68,7 @@ export class Environment {
     this.lightDir = new THREE.Vector3();
     this.sunI = 1; this.ambI = 1; this.stars = 0; this.sunVis = 1; this.dayness = 1;
     this.flash = 0;
-    // world clock (driven by the server; see server.js worldClock)
+    // world clock (driven by the server; see server/world-clock.js)
     this.dayHours = 0.25;          // real hours per in-game day (15 min)
     this.day = 1;
     this.season = 'spring';
@@ -80,6 +80,14 @@ export class Environment {
   }
 
   setWeather(name) { this.weatherName = name; this.targetWeather = WEATHERS[name]; }
+
+  // name / icon for the HUD and toasts (rain falls as snow in winter)
+  get isWinter() { return this.s.snow > 0.5; }
+  weatherLabel(w = this.weatherName) { return w === 'rain' && this.isWinter ? 'Tuyết rơi' : WEATHER_NAMES[w]; }
+  weatherIcon(w = this.weatherName) {
+    if (w === 'rain') return this.isWinter ? '🌨️' : '🌧️';
+    return w === 'cloudy' ? '☁️' : w === 'fog' ? '🌫️' : this.dayness > 0.5 ? '☀️' : '🌙';
+  }
 
   // state from the server: jump if far off, otherwise nudge so the sky never snaps
   applyServer(m, instant = false) {

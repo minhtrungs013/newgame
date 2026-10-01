@@ -1,44 +1,32 @@
+// Game entry point: builds the scene, wires input / UI / networking and runs the frame loop.
 import * as THREE from 'three';
-import { Terrain, heightAt, waterAt, pondsNear, fillPondUniforms } from './terrain.js';
-import { Water } from './water.js';
-import { Crocs } from './crocs.js';
-import { LEVEL_MAX, XP_MAX, levelInfo, stageName } from './levels.js';
-
-const CARD_RANGE = 10;   // metres: how close you must be to inspect another cow
-import { Grass } from './grass.js';
-import { Cow, BUTT_HIT_AT, setCowModel } from './cow.js';
-import { loadCowModel } from './cowmodel.js';
-import { Sky } from './sky.js';
-import { Environment } from './environment.js';
-import { World } from './world.js';
-import { AudioSys } from './audio.js';
-import { Net, NameTag } from './net.js';
-import { Customizer } from './customize.js';
-import { ClanPanel } from './clan-ui.js';
-import { GamepadInput } from './gamepad.js';
-import { MAX_COWS } from './grass.js';
-import { WEATHERS, SEASON_ORDER, SEASON_INFO, WEATHER_NAMES } from './environment.js';
+import { Terrain, heightAt, waterAt, fillPondUniforms } from './world/terrain.js';
+import { Water } from './world/water.js';
+import { Crocs } from './world/crocs.js';
+import { Grass, MAX_COWS } from './world/grass.js';
+import { Sky } from './world/sky.js';
+import { Environment, SEASON_INFO } from './world/environment.js';
+import { World } from './world/world.js';
+import { Rain, Snow, Leaves } from './world/weather-fx.js';
+import { Cow, BUTT_HIT_AT, setCowModel } from './cow/cow.js';
+import { loadCowModel } from './cow/cowmodel.js';
+import { Net, NameTag } from './net/net.js';
+import { AudioSys } from './audio/audio.js';
+import { GamepadInput } from './input/gamepad.js';
+import { Customizer } from './ui/customize.js';
+import { ClanPanel } from './ui/clan-ui.js';
+import { SeasonWheel } from './ui/season-wheel.js';
+import { Minimap } from './ui/minimap.js';
+import { LEVEL_MAX, XP_MAX, levelInfo, stageName } from './game/levels.js';
+import {
+  XP_GRAZE, XP_DRINK, XP_HUNGER, GRAZE_RATE, DRINK_RATE, FULL,
+  HEALTH_DRAIN, HEALTH_REGEN, CARD_RANGE, QUALITY,
+} from './game/config.js';
 
 const $ = (id) => document.getElementById(id);
 
-// Levels 0..30: grazing (and a little drinking) earns XP; each level makes the cow bigger.
-// Hunger and thirst cost XP (you can drop levels). server.js caps how fast XP can grow.
-const XP_GRAZE = 1;      // per second of eating grass (Lv 30 takes ~78 min of grazing)
-const XP_DRINK = 0.25;   // per second of drinking
-const XP_HUNGER = 0.75;  // lost per second for each unmet need
-// XP only comes with food / water actually gained, so a full cow can't farm XP by holding E
-const GRAZE_RATE = 0.06; // food gained per second of grazing
-const DRINK_RATE = 0.15; // water gained per second of drinking
-const FULL = 0.995;
 // does the cow still want to eat (or drink, at the water's edge)?
 const wantsMore = () => (state.canDrink ? state.water < FULL : state.food < FULL);
-const dpr = window.devicePixelRatio || 1;
-const QUALITY = {
-  low:    { blades: 45000,  patch: 64,  segs: 3, pr: Math.min(dpr, 1) * 0.75, shadows: false, shadowMap: 1024, flowers: 700,  rain: 1500 },
-  medium: { blades: 160000, patch: 84,  segs: 4, pr: Math.min(dpr, 1),        shadows: true,  shadowMap: 1024, flowers: 1800, rain: 3000 },
-  high:   { blades: 300000, patch: 104, segs: 5, pr: Math.min(dpr, 1.5),      shadows: true,  shadowMap: 2048, flowers: 3000, rain: 4500 },
-  ultra:  { blades: 500000, patch: 128, segs: 5, pr: Math.min(dpr, 2),        shadows: true,  shadowMap: 4096, flowers: 4500, rain: 6000 },
-};
 
 // ---------- renderer / scene ----------
 const canvas = $('game');
@@ -71,9 +59,6 @@ const world = new World(scene);
 const water = new Water(scene);
 const crocs = new Crocs(scene);
 
-// health: drains while starving or parched; at 0 the cow dies
-const HEALTH_DRAIN = 1 / 90;  // per second for each unmet need (hunger / thirst)
-const HEALTH_REGEN = 1 / 60;  // per second when fed and watered
 // realistic cow model (falls back to the procedural cow if it can't load or is turned off)
 {
   let real = true;
@@ -97,112 +82,10 @@ cow.onLand = onLand;
 const selfTag = new NameTag($('tags'), '', true);
 const selfTagPos = new THREE.Vector3();
 
-// ---------- rain ----------
-class Rain {
-  constructor() {
-    this.mat = new THREE.LineBasicMaterial({ color: 0xc8d0d8, transparent: true, opacity: 0.35, depthWrite: false });
-    this.lines = null;
-  }
-  build(count) {
-    if (this.lines) { scene.remove(this.lines); this.lines.geometry.dispose(); }
-    this.count = count;
-    this.drops = new Float32Array(count * 4); // x,y,z,speed
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 6), 3));
-    this.lines = new THREE.LineSegments(geo, this.mat);
-    this.lines.frustumCulled = false;
-    scene.add(this.lines);
-    for (let i = 0; i < count; i++) this._reset(i, camera.position, true);
-  }
-  _reset(i, c, randomY) {
-    const d = this.drops;
-    d[i * 4] = c.x + (Math.random() - 0.5) * 60;
-    d[i * 4 + 2] = c.z + (Math.random() - 0.5) * 60;
-    d[i * 4 + 1] = c.y + (randomY ? (Math.random() - 0.3) * 40 : 20 + Math.random() * 10);
-    d[i * 4 + 3] = 18 + Math.random() * 8;
-  }
-  update(dt, amount, wind, windDir) {
-    this.lines.visible = amount > 0.02;
-    this.mat.opacity = 0.32 * amount;
-    if (!this.lines.visible) return;
-    const d = this.drops, p = this.lines.geometry.attributes.position.array, c = camera.position;
-    const wx = windDir.x * wind * 3.5, wz = windDir.y * wind * 3.5;
-    const active = Math.floor(this.count * amount);
-    for (let i = 0; i < this.count; i++) {
-      const o = i * 4;
-      const s = d[o + 3];
-      d[o] += wx * dt; d[o + 1] -= s * dt; d[o + 2] += wz * dt;
-      if (d[o + 1] < c.y - 15 || Math.abs(d[o] - c.x) > 32 || Math.abs(d[o + 2] - c.z) > 32 ||
-          d[o + 1] < heightAt(d[o], d[o + 2])) this._reset(i, c, false);
-      const k = i < active ? 0.045 : 0;
-      p[i * 6] = d[o]; p[i * 6 + 1] = d[o + 1]; p[i * 6 + 2] = d[o + 2];
-      p[i * 6 + 3] = d[o] - wx * k; p[i * 6 + 4] = d[o + 1] + s * k; p[i * 6 + 5] = d[o + 2] - wz * k;
-    }
-    this.lines.geometry.attributes.position.needsUpdate = true;
-  }
-}
-const rain = new Rain();
-
-// ---------- snowfall (winter "rain") ----------
-class Snow {
-  constructor(count = 2500) {
-    this.count = count;
-    this.flakes = new Float32Array(count * 4); // x, y, z, phase
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-    // soft round flake sprite
-    const c = document.createElement('canvas'); c.width = c.height = 32;
-    const g = c.getContext('2d'), rg = g.createRadialGradient(16, 16, 0, 16, 16, 16);
-    rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(0.5, 'rgba(255,255,255,.6)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = rg; g.fillRect(0, 0, 32, 32);
-    this.mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.12, map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false });
-    this.points = new THREE.Points(geo, this.mat);
-    this.points.frustumCulled = false;
-    scene.add(this.points);
-    for (let i = 0; i < count; i++) this._reset(i, camera.position, true);
-  }
-  _reset(i, c, anyY) {
-    const d = this.flakes;
-    d[i * 4] = c.x + (Math.random() - 0.5) * 50;
-    d[i * 4 + 2] = c.z + (Math.random() - 0.5) * 50;
-    d[i * 4 + 1] = c.y + (anyY ? (Math.random() - 0.4) * 30 : 12 + Math.random() * 8);
-    d[i * 4 + 3] = Math.random() * 10;
-  }
-  update(dt, amount, wind, windDir) {
-    this.points.visible = amount > 0.02;
-    this.mat.opacity = 0.85 * amount;
-    if (!this.points.visible) return;
-    const d = this.flakes, p = this.points.geometry.attributes.position.array, c = camera.position;
-    const active = Math.floor(this.count * amount);
-    for (let i = 0; i < this.count; i++) {
-      const o = i * 4;
-      d[o + 3] += dt;
-      d[o] += (windDir.x * wind * 1.2 + Math.sin(d[o + 3] * 1.3) * 0.4) * dt;
-      d[o + 2] += (windDir.y * wind * 1.2 + Math.cos(d[o + 3] * 1.1) * 0.4) * dt;
-      d[o + 1] -= (1.2 + (i % 7) * 0.12) * dt;
-      if (d[o + 1] < c.y - 12 || Math.abs(d[o] - c.x) > 26 || Math.abs(d[o + 2] - c.z) > 26 || d[o + 1] < heightAt(d[o], d[o + 2])) this._reset(i, c, false);
-      const hide = i >= active ? -1000 : 0;
-      p[i * 3] = d[o]; p[i * 3 + 1] = d[o + 1] + hide; p[i * 3 + 2] = d[o + 2];
-    }
-    this.points.geometry.attributes.position.needsUpdate = true;
-  }
-}
-const snow = new Snow();
-
-// ---------- drifting leaves / petals (colour & amount follow the season) ----------
-const LEAVES = 220;
-const leafGeo = new THREE.PlaneGeometry(0.1, 0.06);
-const leafMat = new THREE.MeshStandardMaterial({ color: 0xe0c050, side: THREE.DoubleSide, roughness: 0.8 });
-const leaves = new THREE.InstancedMesh(leafGeo, leafMat, LEAVES);
-leaves.frustumCulled = false;
-scene.add(leaves);
-const leafData = Array.from({ length: LEAVES }, () => ({ p: new THREE.Vector3(), r: new THREE.Euler(), s: Math.random() * 10, v: 0.3 + Math.random() * 0.5 }));
-const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1);
-function resetLeaf(l, around, anywhere) {
-  const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 26;
-  l.p.set(around.x + Math.cos(a) * r, 0, around.z + Math.sin(a) * r);
-  l.p.y = heightAt(l.p.x, l.p.z) + (anywhere ? 0.2 + Math.random() * 4 : 3 + Math.random() * 3);
-}
+// ---------- weather particles ----------
+const rain = new Rain(scene, camera);
+const snow = new Snow(scene, camera);
+const leaves = new Leaves(scene);
 
 // ---------- state ----------
 const state = {
@@ -767,12 +650,9 @@ function applyEnv(m, instant) {
     const si = SEASON_INFO[m.season];
     toast(`${si.icon} Mùa ${si.name.toLowerCase()} đã đến!`);
   } else if (!instant && m.weather !== prevWeather) {
-    toast(`${weatherIcon(m.weather)} Thời tiết: ${weatherLabel(m.weather)}`);
+    toast(`${env.weatherIcon(m.weather)} Thời tiết: ${env.weatherLabel(m.weather)}`);
   }
 }
-const isWinter = () => env.s.snow > 0.5;
-const weatherLabel = (w) => (w === 'rain' && isWinter() ? 'Tuyết rơi' : WEATHER_NAMES[w]);
-const weatherIcon = (w) => (w === 'rain' ? (isWinter() ? '🌨️' : '🌧️') : w === 'cloudy' ? '☁️' : w === 'fog' ? '🌫️' : env.dayness > 0.5 ? '☀️' : '🌙');
 const net = new Net(scene, $('tags'), {
   onStatus(s) {
     $('net-dot').className = 'dot ' + s;
@@ -1313,83 +1193,19 @@ function updateEnvironment(dt) {
   snow.update(dt, snowK, w.wind, windDir);
 
   // leaves / petals: how many depends on the season
-  leaves.count = Math.min(LEAVES, Math.round(90 * S.leaves));
-  for (let i = 0; i < leaves.count; i++) {
-    const l = leafData[i];
-    if (!l.init) { resetLeaf(l, cow.pos, true); l.init = true; }
-    l.s += dt;
-    l.p.x += (windDir.x * w.wind * 1.4 + Math.sin(l.s * 1.3) * 0.3) * dt;
-    l.p.z += (windDir.y * w.wind * 1.4 + Math.cos(l.s * 1.1) * 0.3) * dt;
-    l.p.y -= l.v * dt * (0.5 + 0.5 * Math.sin(l.s * 2.0) ** 2);
-    const gh = heightAt(l.p.x, l.p.z);
-    if (l.p.y < gh + 0.05) l.p.y = gh + 0.05, l.rest = (l.rest || 0) + dt;
-    const dx = l.p.x - cow.pos.x, dz = l.p.z - cow.pos.z;
-    if ((l.rest || 0) > 6 || dx * dx + dz * dz > 34 * 34) { resetLeaf(l, cow.pos, false); l.rest = 0; }
-    l.r.set(l.s * 2.1, l.s * 1.3, l.s * 1.7);
-    _q.setFromEuler(l.r);
-    _m.compose(l.p, _q, _one);
-    leaves.setMatrixAt(i, _m);
-  }
-  leaves.instanceMatrix.needsUpdate = true;
-  leafMat.color.copy(S.leafColor).multiplyScalar(0.6 + 0.4 * env.dayness);
+  leaves.update(dt, cow.pos, S.leaves, S.leafColor, env.dayness, w.wind, windDir);
 
   world.setFrame(state.time, w.wind);
   water.setFrame(state.time, env, rainK, S.ice);
 }
 
-// ---------- season wheel (top right) ----------
-const wheel = $('season-wheel'), wctx = wheel.getContext('2d');
-function drawSeasonWheel() {
-  const W = 110, R = W / 2, ring = R - 6; // drawn in CSS pixels, canvas is 2x for sharpness
-  const idx = SEASON_ORDER.indexOf(env.season);
-  const year = (idx + env.seasonT) / 4; // 0..1 position in the year
-  wctx.setTransform(wheel.width / W, 0, 0, wheel.width / W, 0, 0);
-  wctx.clearRect(0, 0, W, W);
-  // four season arcs (spring starts at the top, clockwise)
-  for (let i = 0; i < 4; i++) {
-    const a0 = -Math.PI / 2 + (i / 4) * Math.PI * 2, a1 = a0 + Math.PI / 2;
-    wctx.beginPath();
-    wctx.arc(R, R, ring, a0 + 0.04, a1 - 0.04);
-    wctx.strokeStyle = SEASON_INFO[SEASON_ORDER[i]].color;
-    wctx.globalAlpha = i === idx ? 1 : 0.38;
-    wctx.lineWidth = i === idx ? 9 : 7;
-    wctx.lineCap = 'round';
-    wctx.stroke();
-    // icon in the middle of each arc
-    const am = (a0 + a1) / 2;
-    wctx.globalAlpha = i === idx ? 1 : 0.55;
-    wctx.font = `${i === idx ? 15 : 12}px "Segoe UI Emoji", sans-serif`;
-    wctx.textAlign = 'center'; wctx.textBaseline = 'middle';
-    wctx.fillText(SEASON_INFO[SEASON_ORDER[i]].icon, R + Math.cos(am) * (ring - 17), R + Math.sin(am) * (ring - 17));
-  }
-  wctx.globalAlpha = 1;
-  // marker: where we are in the year
-  const am = -Math.PI / 2 + year * Math.PI * 2;
-  wctx.beginPath();
-  wctx.arc(R + Math.cos(am) * ring, R + Math.sin(am) * ring, 6, 0, Math.PI * 2);
-  wctx.fillStyle = '#fff'; wctx.fill();
-  wctx.lineWidth = 2; wctx.strokeStyle = 'rgba(0,0,0,.5)'; wctx.stroke();
-  // centre: day / night dial (sun or moon moving round with the hour)
-  const inner = ring - 30;
-  const g2 = wctx.createRadialGradient(R, R, 2, R, R, inner);
-  const day = env.dayness;
-  g2.addColorStop(0, day > 0.5 ? 'rgba(120,170,230,.55)' : 'rgba(30,40,80,.65)');
-  g2.addColorStop(1, 'rgba(0,0,0,.25)');
-  wctx.beginPath(); wctx.arc(R, R, inner, 0, Math.PI * 2); wctx.fillStyle = g2; wctx.fill();
-  const ha = (env.hour / 24) * Math.PI * 2 + Math.PI / 2; // midnight at the bottom, noon at the top
-  wctx.font = '13px "Segoe UI Emoji", sans-serif';
-  wctx.fillText(day > 0.5 ? '☀️' : '🌙', R + Math.cos(ha) * (inner - 9), R + Math.sin(ha) * (inner - 9));
-  wctx.fillStyle = '#fff';
-  wctx.font = '600 11px "Segoe UI", sans-serif';
-  const hh = Math.floor(env.hour), mm = Math.floor((env.hour % 1) * 60);
-  wctx.fillText(`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, R, R + 1);
-  $('season-text').textContent = `${SEASON_INFO[env.season].icon} ${SEASON_INFO[env.season].name} · Ngày ${env.day}/2 · ${weatherIcon(env.weatherName)} ${weatherLabel(env.weatherName)}`;
-}
+const seasonWheel = new SeasonWheel($('season-wheel'), $('season-text'));
+const minimap = new Minimap($('minimap'));
 
 // ---------- HUD ----------
 let hudTimer = 0, fpsFrames = 0, fpsTime = 0, fps = 0;
 function updateHud(dt) {
-  if (hudTimer <= dt) drawSeasonWheel();
+  if (hudTimer <= dt) seasonWheel.draw(env);
   if (cardRemote && hudTimer <= dt) updateCard();
   fpsFrames++; fpsTime += dt;
   if (fpsTime > 0.5) { fps = Math.round(fpsFrames / fpsTime); fpsFrames = 0; fpsTime = 0; }
@@ -1434,54 +1250,6 @@ function updateHud(dt) {
   }
 }
 
-// ---------- minimap ----------
-const mm = $('minimap'), mctx = mm.getContext('2d');
-const MM_RANGE = 120; // metres from centre to edge
-function drawMinimap() {
-  if (state.cinematic) return;
-  const W = mm.width, R = W / 2, sc = (R - 8) / MM_RANGE;
-  const sy = Math.sin(state.camYaw), cy = Math.cos(state.camYaw);
-  // world offset -> minimap pixels, rotated so the camera's forward points up
-  const toScreen = (dx, dz) => [R + (dx * cy - dz * sy) * sc, R + (dx * sy + dz * cy) * sc];
-  mctx.clearRect(0, 0, W, W);
-  mctx.save();
-  mctx.beginPath(); mctx.arc(R, R, R - 1, 0, Math.PI * 2); mctx.clip();
-  mctx.fillStyle = 'rgba(90,150,210,0.55)';
-  for (const p of pondsNear(cow.pos.x, cow.pos.z, 1)) {
-    const [x, y] = toScreen(p.x - cow.pos.x, p.z - cow.pos.z);
-    mctx.beginPath(); mctx.arc(x, y, Math.max(3, p.R * 1.15 * sc), 0, Math.PI * 2); mctx.fill();
-  }
-  mctx.fillStyle = 'rgba(160,170,150,0.45)';
-  for (const c of world.colliders) {
-    if (c.r < 0.5) continue;
-    const [x, y] = toScreen(c.x - cow.pos.x, c.z - cow.pos.z);
-    mctx.beginPath(); mctx.arc(x, y, Math.max(1.2, c.r * sc), 0, Math.PI * 2); mctx.fill();
-  }
-  mctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  mctx.beginPath(); mctx.arc(R, R, (R - 8) / 2, 0, Math.PI * 2); mctx.stroke();
-  mctx.font = '600 10px Segoe UI, sans-serif';
-  mctx.textAlign = 'center';
-  for (const r of net.remotes.values()) {
-    let dx = r.cow.pos.x - cow.pos.x, dz = r.cow.pos.z - cow.pos.z;
-    const d = Math.hypot(dx, dz);
-    const far = d > MM_RANGE;
-    if (far) { dx *= MM_RANGE / d; dz *= MM_RANGE / d; }
-    const [x, y] = toScreen(dx, dz);
-    const mate = state.clan && r.clan && r.clan.id === state.clan.id;
-    mctx.fillStyle = mate ? state.clan.color : far ? 'rgba(255,196,90,0.7)' : '#ffc45a';
-    mctx.beginPath(); mctx.arc(x, y, far ? 3 : 4, 0, Math.PI * 2); mctx.fill();
-    if (!far) { mctx.fillStyle = 'rgba(255,255,255,0.85)'; mctx.fillText(r.name, x, y - 7); }
-  }
-  mctx.restore();
-  // local cow arrow
-  mctx.save();
-  mctx.translate(R, R);
-  mctx.rotate(state.camYaw + Math.PI - cow.heading);
-  mctx.fillStyle = '#d8e8a8';
-  mctx.beginPath(); mctx.moveTo(0, -7); mctx.lineTo(5, 5); mctx.lineTo(0, 2); mctx.lineTo(-5, 5); mctx.closePath(); mctx.fill();
-  mctx.restore();
-}
-
 // ---------- loop ----------
 applySettings();
 env.setWeather('clear');
@@ -1513,7 +1281,7 @@ function tick(dt) {
   selfTagPos.set(cow.pos.x, cow.pos.y + cow.air + (2.0 - 0.5 * cow.lie) * cow.size, cow.pos.z);
   selfTag.update(dt, selfTagPos, camera);
   renderer.render(scene, camera);
-  drawMinimap();
+  if (!state.cinematic) minimap.draw({ cow, camYaw: state.camYaw, colliders: world.colliders, remotes: net.remotes.values(), clan: state.clan });
   updateHud(dt);
   // rumble the controller on bumps, hits and bites
   if (settings.rumble && state.shake > prevShake + 0.05) pad.rumble(state.shake, 120 + state.shake * 300);

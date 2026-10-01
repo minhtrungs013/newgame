@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { TDSLoader } from 'three/addons/loaders/TDSLoader.js';
 
-// Realistic cow model (cowModel/*.3DS) with an automatic rig.
+// Realistic cow model (models/cow/cow.3ds) with an automatic rig.
 // The mesh has no skeleton, so we fit the procedural cow's pivots (hips, knees,
 // neck, head) to the model and skin every body vertex to them by position.
 // cow.js then animates exactly the same pivots, so all animations keep working.
 
-const URL = 'cowModel/cow.3ds';
-const RES = 'cowModel/';
+const URL = 'models/cow/cow.3ds';
+const RES = 'models/cow/';
 const BACK_HEIGHT = 1.42;   // top of the back in cow space (matches the procedural cow)
 const HOLSTEIN = { base: '#f4f1ea', spot: '#141212' };
 

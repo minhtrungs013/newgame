@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { Cow } from './cow.js';
-import { heightAt } from './terrain.js';
+import { Cow } from '../cow/cow.js';
+import { heightAt } from '../world/terrain.js';
 
 const SEND_HZ = 12;
 
