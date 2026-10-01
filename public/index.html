@@ -397,9 +397,12 @@
 
   <!-- Admin announcement banner (/ONADMIN ... / /OFFADMIN) -->
   <div id="announce" class="hidden" role="alert">
-    <div class="an-head">📢 THÔNG BÁO</div>
-    <div class="an-text" id="announce-text"></div>
-    <div class="an-by" id="announce-by"></div>
+    <div class="an-icon">📢</div>
+    <div class="an-body">
+      <div class="an-head">Thông báo <span id="announce-by"></span></div>
+      <div class="an-text" id="announce-text"></div>
+    </div>
+    <button type="button" id="announce-min" class="an-min" title="Thu gọn" aria-label="Thu gọn">–</button>
   </div>
   <!-- low health: red pulsing vignette -->
   <div id="hurt"></div>

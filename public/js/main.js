@@ -780,9 +780,12 @@ const net = new Net(scene, $('tags'), {
       return;
     }
     $('announce-text').textContent = a.text;
-    $('announce-by').textContent = a.by ? `— ${a.by}` : '';
-    // restart the pop-in animation for a new message
+    $('announce-text').title = a.text; // full text on hover when it's clamped
+    $('announce-by').textContent = a.by ? `· ${a.by}` : '';
+    // a new message opens the card again and flashes it
+    box.classList.remove('min', 'flash');
     box.classList.add('hidden'); void box.offsetWidth; box.classList.remove('hidden');
+    if (!initial) box.classList.add('flash');
     audio.chime();
     if (!initial) addChat('', `📢 Thông báo: ${a.text}`, true);
   },
@@ -1346,6 +1349,10 @@ const market = new MarketDialog($('market'), {
   onBuy(id) { net.send({ t: 'buy', id }); },
 });
 const adminPanel = new AdminPanel($('pane-admin'), { getToken: () => account.token, toast });
+
+// announcement card: '–' minimises it to a chip, clicking the chip opens it again
+$('announce-min').addEventListener('click', (e) => { e.stopPropagation(); $('announce').classList.add('min'); });
+$('announce').addEventListener('click', () => $('announce').classList.remove('min'));
 
 // ---------- account locked for cheating ----------
 function showBanned(m) {
