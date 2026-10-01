@@ -27,16 +27,28 @@ const LEVEL_MAX = 30;
 const xpForLevel = (l) => 40 * l + 4 * l * (l - 1);
 const XP_MAX = xpForLevel(LEVEL_MAX);
 const levelOf = (xp) => { let l = 0; while (l < LEVEL_MAX && xp >= xpForLevel(l + 1)) l++; return l; };
-const MAX_XP_PER_SEC = 1.4; // a little above the client's best rate (1/s), to absorb lag
+// XP only comes from actually eating / drinking (must match js/main.js): a full cow that keeps
+// holding E gains nothing. Food / water may rise only as fast as eating / drinking allows, and
+// every bit they rise puts XP in a small "bank" that the reported XP can draw from.
+const XP_GRAZE = 1, XP_DRINK = 0.25;          // XP per second of eating / drinking
+const GRAZE_RATE = 0.06, DRINK_RATE = 0.15;   // food / water gained per second
+const RISE_SLACK = 1.5;                       // network jitter on how fast food / water may rise
+const XP_SLACK = 1.15;
+const XP_BANK_MAX = 40;
 const CALF_SIZE = 0.5;
 
 // ---------- accounts & saved progress ----------
-const { createStore } = require('./store');
-const store = createStore();
+// collections: users (login), players (progress), sessions, clans - see db.js
+const { openDb } = require('./db');
+let dbPromise = null;
+function getDb() { // connects on first use; retried on the next call if it failed
+  if (!dbPromise) { dbPromise = openDb({ levelOf }); dbPromise.catch(() => { dbPromise = null; }); }
+  return dbPromise;
+}
 const SESSION_TTL = 60 * 60 * 24 * 30; // 30 days
 const USER_RE = /^[a-zA-Z0-9_]{3,16}$/;
-const userKey = (u) => `user:${u.toLowerCase()}`;
-const freshProgress = () => ({ xp: 0, food: 0.5, water: 0.7, health: 1, x: null, z: null, h: 0 });
+const idOf = (username) => username.toLowerCase();
+const freshProgress = () => ({ xp: 0, level: 0, food: 0.5, water: 0.7, health: 1, x: null, z: null, h: 0 });
 function hashPassword(pw, salt = crypto.randomBytes(16).toString('hex')) {
   return new Promise((res, rej) => crypto.scrypt(pw, salt, 32, (e, k) => (e ? rej(e) : res({ salt, hash: k.toString('hex') }))));
 }
@@ -46,18 +58,23 @@ async function checkPassword(pw, stored) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 async function newSession(username) {
+  const db = await getDb();
   const token = crypto.randomBytes(24).toString('hex');
-  await store.set(`sess:${token}`, username, SESSION_TTL);
+  const now = new Date();
+  await db.sessions.put({ _id: token, username, createdAt: now, expiresAt: new Date(now.getTime() + SESSION_TTL * 1000) });
+  await db.users.update(idOf(username), { lastLoginAt: now });
   return token;
 }
+// -> { username, user, player } for a valid login token
 async function userFromToken(token) {
   if (typeof token !== 'string' || !/^[a-f0-9]{48}$/.test(token)) return null;
-  const username = await store.get(`sess:${token}`);
-  if (!username) return null;
-  const u = await store.get(userKey(username));
-  return u ? { username: u.username, user: u } : null;
+  const db = await getDb();
+  const sess = await db.sessions.get(token);
+  if (!sess || (sess.expiresAt && sess.expiresAt < new Date())) return null; // MongoDB's TTL sweep runs once a minute
+  const [user, player] = await Promise.all([db.users.get(idOf(sess.username)), db.players.get(idOf(sess.username))]);
+  return user && player ? { username: user.username, user, player } : null;
 }
-const publicProfile = (u) => ({ username: u.username, name: u.profile.name, look: u.profile.look, xp: u.profile.xp, level: levelOf(u.profile.xp || 0) });
+const publicProfile = (pl) => ({ username: pl.username, name: pl.name, look: pl.look, xp: pl.xp, level: levelOf(pl.xp || 0) });
 
 // brute-force protection for login/register: 20 attempts / 10 min / IP
 const authHits = new Map();
@@ -91,31 +108,36 @@ async function handleApi(req, res, url) {
   }
   if (url === '/api/me' && req.method === 'GET') {
     const auth = await userFromToken((req.headers.authorization || '').replace(/^Bearer /, ''));
-    return auth ? sendJson(res, 200, publicProfile(auth.user)) : sendJson(res, 401, { error: 'Phiên đăng nhập đã hết hạn.' });
+    return auth ? sendJson(res, 200, publicProfile(auth.player)) : sendJson(res, 401, { error: 'Phiên đăng nhập đã hết hạn.' });
   }
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   const body = await readBody(req);
   if (!body) return sendJson(res, 400, { error: 'Dữ liệu không hợp lệ.' });
   if (url === '/api/logout') {
-    if (typeof body.token === 'string' && /^[a-f0-9]{48}$/.test(body.token)) await store.del(`sess:${body.token}`);
+    if (typeof body.token === 'string' && /^[a-f0-9]{48}$/.test(body.token)) await (await getDb()).sessions.del(body.token);
     return sendJson(res, 200, { ok: true });
   }
   if (rateLimited(ip)) return sendJson(res, 429, { error: 'Thử quá nhiều lần, đợi vài phút nhé.' });
   const username = String(body.username || '').trim(), password = String(body.password || '');
   if (!USER_RE.test(username)) return sendJson(res, 400, { error: 'Tên đăng nhập 3–16 ký tự: chữ không dấu, số, dấu _' });
   if (password.length < 6 || password.length > 100) return sendJson(res, 400, { error: 'Mật khẩu cần ít nhất 6 ký tự.' });
-  const key = userKey(username);
+  const db = await getDb();
+  const id = idOf(username);
   if (url === '/api/register') {
-    if (await store.get(key)) return sendJson(res, 409, { error: 'Tên đăng nhập đã có người dùng.' });
-    const user = { username, pass: await hashPassword(password), created: Date.now(), profile: { name: username, look: null, ...freshProgress() } };
-    await store.set(key, user);
+    if (await db.users.get(id)) return sendJson(res, 409, { error: 'Tên đăng nhập đã có người dùng.' });
+    const now = new Date();
+    await db.users.put({ _id: id, username, password: await hashPassword(password), clanId: null, createdAt: now, lastLoginAt: null });
+    const player = { _id: id, username, name: username, look: null, ...freshProgress(), updatedAt: now };
+    await db.players.put(player);
     console.log(`* new account: ${username}`);
-    return sendJson(res, 200, { token: await newSession(username), ...publicProfile(user) });
+    return sendJson(res, 200, { token: await newSession(username), ...publicProfile(player) });
   }
   if (url === '/api/login') {
-    const user = await store.get(key);
-    if (!user || !(await checkPassword(password, user.pass))) return sendJson(res, 401, { error: 'Sai tên đăng nhập hoặc mật khẩu.' });
-    return sendJson(res, 200, { token: await newSession(user.username), ...publicProfile(user) });
+    const user = await db.users.get(id);
+    if (!user || !(await checkPassword(password, user.password))) return sendJson(res, 401, { error: 'Sai tên đăng nhập hoặc mật khẩu.' });
+    let player = await db.players.get(id);
+    if (!player) { player = { _id: id, username: user.username, name: user.username, look: null, ...freshProgress(), updatedAt: new Date() }; await db.players.put(player); }
+    return sendJson(res, 200, { token: await newSession(user.username), ...publicProfile(player) });
   }
   return sendJson(res, 404, { error: 'Not found' });
 }
@@ -125,7 +147,7 @@ const { createClans } = require('./clans');
 const BUTT_DAMAGE = 0.12;          // health lost per headbutt from a non-teammate (x power 0.6..1.8)
 const MAX_HEAL_PER_SEC = 1 / 40;   // clients regen at 1/60 per s; anything faster is ignored
 const clans = createClans({
-  store, userKey, levelOf,
+  getDb, levelOf,
   onlineUsers: () => new Set([...players.values()].filter((p) => p.ready && p.user).map((p) => p.user.toLowerCase())),
   // roster / tag changed for these accounts: update online players and tell everyone
   notify(usernames, clanPub, clanId) {
@@ -147,15 +169,16 @@ const sameClan = (a, b) => !!(a.clan && b.clan && a.clan.id === b.clan.id);
 async function saveProfile(p) {
   if (!p.user) return;
   try {
-    const u = await store.get(userKey(p.user));
-    if (!u) return;
-    u.profile = {
-      ...u.profile, name: p.name, look: p.look, xp: Math.round(p.xp * 10) / 10,
-      food: p.food, water: p.water, health: p.health, updated: Date.now(),
+    const db = await getDb();
+    const r3 = (v) => Math.round(v * 1000) / 1000;
+    const xp = Math.round(p.xp * 10) / 10;
+    await db.players.update(idOf(p.user), {
+      name: p.name, look: p.look, level: levelOf(xp), xp,
+      food: r3(p.food), water: r3(p.water), health: r3(p.health),
       // after dying the next session starts at the spawn meadow again
-      x: p.posReset ? null : p.x, z: p.posReset ? null : p.z, h: p.h,
-    };
-    await store.set(userKey(p.user), u);
+      x: p.posReset ? null : r3(p.x), z: p.posReset ? null : r3(p.z), h: r3(p.h),
+      updatedAt: new Date(),
+    });
     p.saveDirty = false;
   } catch (e) { console.error('save failed for', p.user, e.message); }
 }
@@ -409,8 +432,9 @@ async function hello(p, m) {
         o.conn.close();
       }
     }
-    const fresh = await store.get(userKey(auth.username)); // re-read after the kick-save
-    const pr = fresh.profile;
+    const db = await getDb();
+    const [fresh, saved] = await Promise.all([db.users.get(idOf(auth.username)), db.players.get(idOf(auth.username))]); // re-read after the kick-save
+    const pr = saved || freshProgress();
     p.user = fresh.username;
     p.xp = num(pr.xp, 0, XP_MAX, 0); p.food = num(pr.food, 0, 1, 0.5); p.water = num(pr.water, 0, 1, 0.7); p.health = num(pr.health, 0.05, 1, 1);
     if (typeof pr.x === 'number' && typeof pr.z === 'number') { p.x = pr.x; p.z = pr.z; p.h = num(pr.h, -1e4, 1e4, 0); }
@@ -481,10 +505,16 @@ function handle(p, text) {
       // XP is reported by the client but can't grow faster than grazing allows
       const now = Date.now();
       if (!p.dead) { // while dead the progress stays reset (fresh calf) whatever the client says
-        const maxXp = p.xp + ((now - p.xpT) / 1000) * MAX_XP_PER_SEC;
-        p.xp = Math.min(num(m.xp, 0, XP_MAX, p.xp), maxXp);
+        const dt = Math.min(5, (now - p.xpT) / 1000);
+        const food = Math.min(num(m.f, 0, 1, p.food), p.food + dt * GRAZE_RATE * RISE_SLACK);
+        const water = Math.min(num(m.w, 0, 1, p.water), p.water + dt * DRINK_RATE * RISE_SLACK);
+        const earned = Math.max(0, food - p.food) / GRAZE_RATE * XP_GRAZE + Math.max(0, water - p.water) / DRINK_RATE * XP_DRINK;
+        p.xpBank = Math.min(XP_BANK_MAX, (p.xpBank || 0) + earned * XP_SLACK);
+        const want = num(m.xp, 0, XP_MAX, p.xp);
+        if (want > p.xp) { const gain = Math.min(want - p.xp, p.xpBank); p.xp += gain; p.xpBank -= gain; }
+        else p.xp = want; // hunger / thirst cost XP
         p.age = levelOf(p.xp) / LEVEL_MAX;
-        p.food = num(m.f, 0, 1, p.food); p.water = num(m.w, 0, 1, p.water);
+        p.food = food; p.water = water;
         const maxHp = p.health + ((now - (p.hpT || now)) / 1000) * MAX_HEAL_PER_SEC;
         p.health = Math.min(num(m.hp, 0, 1, p.health), maxHp);
       }
@@ -508,7 +538,7 @@ function handle(p, text) {
         p.lastLife = now;
         if (m.a === 'die' || m.a === 'respawn') {
           // dying starts the account over: new calf at the spawn meadow
-          Object.assign(p, { xp: 0, age: 0, xpT: now, food: 0.5, water: 0.7, health: 1 });
+          Object.assign(p, { xp: 0, xpBank: 0, age: 0, xpT: now, food: 0.5, water: 0.7, health: 1 });
           p.dead = m.a === 'die';
           p.posReset = p.dead;
           if (p.dead && p.user) saveProfile(p);
@@ -650,7 +680,7 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   await Promise.all([...players.values()].filter((p) => p.user).map(saveProfile));
-  await store.close();
+  try { await (await getDb()).close(); } catch {}
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);
@@ -658,9 +688,8 @@ process.on('SIGINT', shutdown);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Cow Meadow running at http://localhost:${PORT}`);
-  console.log(`  Saves: ${store.kind}`);
-  store.ready().then(() => console.log(`  Storage ready: ${store.kind}`))
-    .catch((e) => console.error(`  !! Cannot reach storage (${store.kind}): ${e.message}`));
+  getDb().then((db) => console.log(`  Storage ready: ${db.kind}`))
+    .catch((e) => console.error(`  !! Cannot reach storage: ${e.message}`));
   for (const u of lanUrls()) console.log(`  LAN:  ${u}`);
 });
 server.on('error', (e) => {

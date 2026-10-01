@@ -98,7 +98,7 @@ Enter: chat · C: chế độ điện ảnh · F3: debug · Esc: cài đặt · 
 
 ## Level
 
-Bò có **level 0 → 30**. Gặm cỏ (giữ E) được 1 XP/giây, uống nước 0,25 XP/giây (Lv 1 ≈ 40 giây, Lv 10 ≈ 13 phút, Lv 30 ≈ 78 phút gặm cỏ); đủ XP thì lên cấp và bò to thêm (Lv 0–9 Bê con, 10–19 Bò tơ, 20–30 Bò trưởng thành, cỡ tối đa theo "Cỡ khi lớn"). Đói hoặc khát thì mất XP và có thể tụt cấp. Server giới hạn tốc độ nhận XP nên không gian lận được.
+Bò có **level 0 → 30**. Gặm cỏ (giữ E) được 1 XP/giây (chỉ khi bò còn đói — bò no thì không ăn và không được XP), uống nước 0,25 XP/giây (Lv 1 ≈ 40 giây, Lv 10 ≈ 13 phút, Lv 30 ≈ 78 phút gặm cỏ); đủ XP thì lên cấp và bò to thêm (Lv 0–9 Bê con, 10–19 Bò tơ, 20–30 Bò trưởng thành, cỡ tối đa theo "Cỡ khi lớn"). Đói hoặc khát thì mất XP và có thể tụt cấp. Server giới hạn tốc độ nhận XP nên không gian lận được.
 
 ## Tài khoản & lưu tiến trình
 
@@ -110,8 +110,18 @@ Mật khẩu được băm bằng scrypt (không lưu dạng chữ thường).
 
 ### Nơi lưu dữ liệu
 
-- **MongoDB** (khi có biến `MONGODB_URI`): collection `kv` trong database `MONGODB_DB` (mặc định `newgame`). **Bắt buộc dùng trên Render**, vì bản miễn phí xoá ổ đĩa mỗi lần khởi động lại.
-- **Không có `MONGODB_URI`**: lưu vào file `data/store.json` (chơi local).
+- **MongoDB** (khi có biến `MONGODB_URI`): database `MONGODB_DB` (mặc định `newgame`). **Bắt buộc dùng trên Render**, vì bản miễn phí xoá ổ đĩa mỗi lần khởi động lại.
+- **Không có `MONGODB_URI`**: mỗi collection là một file `data/<tên>.json` (chơi local).
+
+| Collection | Nội dung |
+|---|---|
+| `users` | Tài khoản đăng nhập: `username`, `password` (salt + hash scrypt), `clanId`, `createdAt`, `lastLoginAt` |
+| `players` | Tiến trình chơi: `name`, `look`, `level`, `xp`, `food`, `water`, `health`, vị trí `x z h`, `updatedAt` |
+| `sessions` | Phiên đăng nhập (token), tự xoá khi hết hạn 30 ngày (`expiresAt`) |
+| `clans` | Clan: `name`, `tag` (không trùng), `color`, `desc`, `open`, `members` (`username`, `role`, `joinedAt`), `requests` |
+| `meta` | Phiên bản cấu trúc dữ liệu |
+
+`_id` của `users` / `players` là tên đăng nhập viết thường. Dữ liệu kiểu cũ (collection `kv` / `data/store.json`) được chuyển sang tự động ở lần chạy đầu và vẫn giữ lại làm bản sao lưu — kiểm tra xong có thể xoá.
 
 **Chạy local với MongoDB**: tạo file `.env` (đã nằm trong `.gitignore`, không bao giờ commit):
 

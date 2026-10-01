@@ -26,6 +26,12 @@ const $ = (id) => document.getElementById(id);
 const XP_GRAZE = 1;      // per second of eating grass (Lv 30 takes ~78 min of grazing)
 const XP_DRINK = 0.25;   // per second of drinking
 const XP_HUNGER = 0.75;  // lost per second for each unmet need
+// XP only comes with food / water actually gained, so a full cow can't farm XP by holding E
+const GRAZE_RATE = 0.06; // food gained per second of grazing
+const DRINK_RATE = 0.15; // water gained per second of drinking
+const FULL = 0.995;
+// does the cow still want to eat (or drink, at the water's edge)?
+const wantsMore = () => (state.canDrink ? state.water < FULL : state.food < FULL);
 const dpr = window.devicePixelRatio || 1;
 const QUALITY = {
   low:    { blades: 45000,  patch: 64,  segs: 3, pr: Math.min(dpr, 1) * 0.75, shadows: false, shadowMap: 1024, flowers: 700,  rain: 1500 },
@@ -290,7 +296,9 @@ addEventListener('keydown', (e) => {
     net.send({ t: 'moo' });
     state.happy = Math.min(1, state.happy + 0.03);
   }
-  if (k === 'KeyE' && state.started && Math.abs(cow.speed) < 0.6 && !cow.lying) cow.startGraze(1.5);
+  if (k === 'KeyE' && state.started && Math.abs(cow.speed) < 0.6 && !cow.lying) {
+    if (wantsMore()) cow.startGraze(1.5); else state.fullTimer = 2;
+  }
   if (k === 'KeyG' && state.started) { toggleMenu(true, 'clan'); return; }
   if (k === 'KeyC') {
     state.cinematic = !state.cinematic;
@@ -1120,17 +1128,25 @@ function updateCow(dt) {
   const wHead = waterAt(cow.pos.x + hx * reach, cow.pos.z + hz * reach);
   const wHere = waterAt(cow.pos.x, cow.pos.z);
   state.canDrink = !!((wHead && wHead.depth > 0.03) || (wHere && wHere.depth > 0.05));
-  if (canControl && k.has('KeyE') && Math.abs(cow.speed) < 0.6) cow.grazeTimer = Math.max(cow.grazeTimer, 0.3);
+  if (canControl && k.has('KeyE') && Math.abs(cow.speed) < 0.6) {
+    if (wantsMore()) cow.grazeTimer = Math.max(cow.grazeTimer, 0.3);
+    else state.fullTimer = 2; // full: the cow refuses (holding E gives nothing)
+  }
+  // filled up while eating / drinking: lift the head
+  if (cow.isGrazing && !wantsMore()) { cow.grazeTimer = 0; state.fullTimer = 2; }
+  state.fullTimer = Math.max(0, (state.fullTimer || 0) - dt);
   state.drinking = state.canDrink && cow.graze > 0.8;
   if (state.drinking) {
-    state.water = Math.min(1, state.water + dt * 0.15);
-    setXp(state.xp + XP_DRINK * dt);
+    const before = state.water;
+    state.water = Math.min(1, state.water + dt * DRINK_RATE);
+    setXp(state.xp + XP_DRINK * (state.water - before) / DRINK_RATE);
     state.slurpTimer -= dt;
     if (state.slurpTimer < 0) { state.slurpTimer = 0.38 + Math.random() * 0.12; audio.slurp(); }
   } else if (cow.graze > 0.8 && !wHere) {
-    state.food = Math.min(1, state.food + dt * 0.06);
-    // eating grass earns XP - but only if the cow isn't parched
-    if (state.food > 0.25 && state.water > 0.15) setXp(state.xp + XP_GRAZE * dt);
+    const before = state.food;
+    state.food = Math.min(1, state.food + dt * GRAZE_RATE);
+    // eating grass earns XP for the food actually eaten - and only if the cow isn't parched
+    if (state.food > 0.25 && state.water > 0.15) setXp(state.xp + XP_GRAZE * (state.food - before) / GRAZE_RATE);
     state.chewTimer -= dt;
     if (state.chewTimer < 0) { state.chewTimer = 0.32 + Math.random() * 0.1; audio.chew(); }
   }
@@ -1394,6 +1410,7 @@ function updateHud(dt) {
   $('prompt').classList.toggle('danger', danger);
   const prompt = state.dead ? '' : danger ? '⚠️ Coi chừng cá sấu! Tránh xa bờ hồ ngay!'
     : cow.lying ? 'Đang nằm nghỉ… 💤  (Z để đứng dậy)'
+    : state.fullTimer > 0 ? (state.canDrink ? 'Bò uống đủ nước rồi 💧' : 'Bò no rồi, không ăn thêm được 🌾')
     : state.drinking ? 'Đang uống nước… 💧' : state.canDrink && state.water < 0.97 ? 'Giữ E để uống nước 💧' : '';
   $('prompt').textContent = prompt;
   $('prompt').classList.toggle('show', !!prompt && state.started);
