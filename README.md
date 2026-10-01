@@ -34,7 +34,7 @@ public/                mọi thứ trình duyệt tải về
   index.html, css/style.css
   js/main.js           khởi động game, vòng lặp, điều khiển, HUD
   js/game/             levels.js, config.js (luật chơi + preset đồ hoạ)
-  js/world/            terrain, grass, water, sky, environment (mùa/thời tiết), world (cây, đá), crocs, weather-fx (mưa, tuyết, lá), farm (chuồng bò + chợ + NPC)
+  js/world/            terrain, grass, water, sky, environment (mùa/thời tiết), world (cây, đá), crocs, weather-fx (mưa, tuyết, lá), farm (khu vắt sữa + chợ + NPC)
   js/cow/              cow.js (con bò + hoạt ảnh), cowmodel.js (model 3D + gắn xương)
   js/ui/               customize (tạo nhân vật), clan-ui, season-wheel, minimap, market-ui (quầy sữa, cửa hàng, túi đồ), admin-ui
   js/net/net.js        kết nối multiplayer, bò của người khác, bảng tên
@@ -175,7 +175,7 @@ Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
 ## Sữa, xu và cửa hàng
 
 1. **Sữa:** bò **Lv 20+** đang no và đủ nước (trên 40%) tự ra sữa vào bầu vú (Lv 20 ≈ 1 lít/90 giây, Lv 30 ≈ 1 lít/50 giây, tối đa 10 lít) — thanh **🥛 Sữa** trên bảng trạng thái.
-2. **Vắt sữa:** vào **🏠 chuồng bò** (gần chỗ xuất phát, có icon trên minimap), nhấn **M** (tay cầm: D-pad →) → sữa vào bình (tối đa 3 bình × 5 lít).
+2. **Vắt sữa:** vào **🐄 khu vắt sữa** — khu rào gỗ có biển (gần chỗ xuất phát, có icon trên minimap), nhấn **M** (tay cầm: D-pad →) → sữa vào bình (tối đa 3 bình × 5 lít).
 3. **Bán sữa:** mang bình tới **🏪 chợ**, đứng trước **quầy thu mua sữa** nhấn **E** → nhận **🪙 xu** theo giá do admin đặt (bảng giá ở chợ).
 4. **Cửa hàng:** quầy bên cạnh (nhấn **E**) bán vật phẩm admin thêm vào; đồ mua về nằm trong **🎒 Túi đồ** (phím **Tab**: sữa đang có + sản phẩm đã mua, hiện chỉ để lưu giữ). Esc → 🎁 Cửa hàng để xem trước.
 5. **Chết:** mất hết sữa đang có và **rớt 50% số xu** (đồ trong túi không mất).
@@ -183,7 +183,7 @@ Log server sẽ ghi `Storage ready: MongoDB (newgame)`.
 Mọi thứ liên quan tới xu (sữa trong bầu vú, vắt, bán, mua, mất khi chết) do server tính và kiểm tra vị trí — client không tự cộng được. Chơi khách không vắt / bán / mua được.
 
 **Chống gian lận** (server không tin số liệu client gửi lên):
-- **Vị trí:** bò không di chuyển nhanh hơn ~7 m/s được (chạy thật 5,2 m/s; có dư cho bị húc văng / mạng giật). Dịch chuyển tức thời bị kéo về vị trí server → không teleport vào chuồng hay ra chợ để vắt / bán.
+- **Vị trí:** bò không di chuyển nhanh hơn ~7 m/s được (chạy thật 5,2 m/s; có dư cho bị húc văng / mạng giật). Dịch chuyển tức thời bị kéo về vị trí server → không teleport vào khu vắt sữa hay ra chợ để vắt / bán.
 - **No & nước:** chỉ tăng khi bò đang cúi đầu ăn / uống (đứng yên), không tăng nhanh hơn tốc độ ăn thật, và **không tụt nhanh hơn tốc độ đói thật** → không "xả rồi đổ đầy" để cày XP.
 - **XP / level:** chỉ tăng theo lượng cỏ / nước thực sự ăn được. Client báo sai thì server gửi lại số đúng.
 - **Sữa & xu:** server tự tính sữa trong bầu vú, vắt / bán / mua chỉ được ở đúng chỗ (theo vị trí server), có khoá chống mua trùng, mỗi giao dịch đều ghi vào `transactions`.

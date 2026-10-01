@@ -74,7 +74,7 @@ export class MarketDialog {
       el('div', 'mk-earn', `→ Nhận: ${fmt(earn)} 🪙`),
     );
     if (!e.loggedIn) box.append(el('p', 'mk-note', 'Đăng nhập để bán sữa lấy xu.'));
-    else if (e.bottles <= 0) box.append(el('p', 'mk-note', 'Chưa có bình sữa nào. Vào chuồng nhấn M để vắt sữa (bò Lv 20+).'));
+    else if (e.bottles <= 0) box.append(el('p', 'mk-note', 'Chưa có bình sữa nào. Vào khu vắt sữa (rào gỗ) nhấn M để vắt (bò Lv 20+).'));
     card.append(box);
     const sell = btn(`Bán hết · +${fmt(earn)} 🪙`, 'c-btn c-primary mk-sell', () => this.h.onSell());
     sell.disabled = !e.loggedIn || e.bottles <= 0;
@@ -151,7 +151,7 @@ export function renderBag(root, eco) {
   };
   const nb = Math.ceil(eco.bottles / BOTTLE_L - 1e-6);
   cards.append(
-    card('Trong bầu vú', `${liters(eco.udder)} / ${UDDER_MAX} L`, 'Vào chuồng 🏠 nhấn M để vắt', eco.udder / UDDER_MAX),
+    card('Trong bầu vú', `${liters(eco.udder)} / ${UDDER_MAX} L`, 'Vào khu vắt sữa 🐄 nhấn M để vắt', eco.udder / UDDER_MAX),
     card('Trong bình', `🍼 ${nb} / ${BOTTLES_MAX} bình · ${liters(eco.bottles)}`, 'Mang ra chợ 🏪 bán', eco.bottles / (BOTTLE_L * BOTTLES_MAX)),
     card('Giá trị nếu bán', `≈ ${fmt(eco.bottles * (eco.milkPrice || 0))} 🪙`, `Giá hiện tại ${eco.milkPrice ?? 0} 🪙 / lít`),
   );

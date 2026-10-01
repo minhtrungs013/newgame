@@ -745,6 +745,12 @@ const net = new Net(scene, $('tags'), {
   },
   onClanUpdate() { if (panel.open === 'clan') clanPanel.refresh(); },
   onEconomy(m) { handleEconomy(m); },
+  onServerDeath(m) {
+    if (state.dead) return;
+    if (m.by) state.lastHitBy = m.by;
+    state.health = 0;
+    killCow(m.reason || 'butt');
+  },
   // the server is authoritative for position, food, water and XP
   onCorrect(m) {
     if (m.t === 'pos') { cow.pos.x = m.x; cow.pos.z = m.z; cow.speed = 0; cow.knock.set(0, 0); }
@@ -1349,8 +1355,8 @@ $('panel').addEventListener('pointerdown', (e) => { if (e.target === $('panel'))
 
 function barnPrompt() {
   const e = state.eco;
-  if (!e.loggedIn) return '🏠 Chuồng bò · đăng nhập để vắt và bán sữa';
-  if (state.level < MILK_MIN_LEVEL) return `🏠 Chuồng bò · bò cần Lv ${MILK_MIN_LEVEL} mới có sữa (đang Lv ${state.level})`;
+  if (!e.loggedIn) return '🐄 Khu vắt sữa · đăng nhập để vắt và bán sữa';
+  if (state.level < MILK_MIN_LEVEL) return `🐄 Khu vắt sữa · bò cần Lv ${MILK_MIN_LEVEL} mới có sữa (đang Lv ${state.level})`;
   if (e.bottles >= BOTTLE_L * BOTTLES_MAX - 0.05) return '🍼 Các bình đã đầy · mang ra chợ bán nhé!';
   if (e.udder < 1) return `Chưa đủ sữa (${fmtL(e.udder)}) · ăn no, uống đủ để bò ra sữa`;
   return `Nhấn M để vắt sữa · Bầu vú ${fmtL(e.udder)} · Bình ${Math.ceil(e.bottles / BOTTLE_L - 1e-6)}/${BOTTLES_MAX}`;
@@ -1430,7 +1436,7 @@ function updateFarm(dt) {
   state.inBarn = state.started && !state.dead && inBarn(cow.pos.x, cow.pos.z);
   state.counter = state.started && !state.dead ? counterAt(cow.pos.x, cow.pos.z) : null;
   if (market.open && !state.counter) market.close(); // walked away
-  farm.update(dt, state.time, cow.pos, 1 - env.dayness);
+  farm.update(dt, state.time, cow.pos);
   if (state.milking > 0) {
     const moved = !state.inBarn || cow.stun > 0 || state.dead;
     if (moved) { state.milking = 0; $('milkbar').classList.add('hidden'); toast('Đã dừng vắt sữa.'); return; }

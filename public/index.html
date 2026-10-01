@@ -28,7 +28,7 @@
     (function () {
       var tips = [
         '💡 Giữ E trên cỏ để gặm cỏ, ở bờ hồ để uống nước.',
-        '💡 Bò Lv 20 trở lên ra sữa — vào chuồng nhấn M để vắt.',
+        '💡 Bò Lv 20 trở lên ra sữa — vào khu vắt sữa (rào gỗ) nhấn M để vắt.',
         '💡 Mang bình sữa ra chợ bán lấy 🪙 xu, rồi ghé cửa hàng.',
         '💡 Đừng đứng ở bờ hồ quá lâu… cá sấu đang rình đấy!',
         '💡 Vào clan (phím G) để có đồng đội — cùng clan không húc mất máu nhau.',
@@ -84,7 +84,7 @@
             <div><b>🌾 Thế giới mở</b><span>Đồng cỏ, rừng cây, hồ nước trải dài vô tận theo mỗi bước chân.</span></div>
             <div><b>👥 Chơi cùng nhau</b><span>Cùng một bản đồ với mọi người, chat, kêu moo, húc nhau cho vui.</span></div>
             <div><b>🐮 Từ bê thành bò</b><span>30 cấp độ — ăn uống đầy đủ để lớn, bỏ đói thì gầy đi.</span></div>
-            <div><b>🥛 Nuôi bò lấy sữa</b><span>Vắt sữa trong chuồng, bán ở chợ lấy xu, đổi quà ở cửa hàng.</span></div>
+            <div><b>🥛 Nuôi bò lấy sữa</b><span>Vắt sữa ở khu rào gỗ, bán ở chợ lấy xu, đổi quà ở cửa hàng.</span></div>
             <div><b>🌸 Bốn mùa</b><span>Ngày đêm 15 phút, mùa xuân hoa nở, thu lá rụng, đông tuyết phủ.</span></div>
             <div><b>🛡️ Clan</b><span>Lập hội với bạn bè, đồng đội không húc mất máu nhau.</span></div>
           </div>
@@ -98,7 +98,7 @@
             <li><b>Vào đồng cỏ:</b> bấm <kbd>Vào đồng cỏ</kbd>. Bạn bắt đầu là một <b>bê con</b>.</li>
             <li><b>Ăn & uống:</b> giữ <kbd>E</kbd> trên cỏ để gặm, tới mép hồ giữ <kbd>E</kbd> để uống. Ăn cỏ cho XP để lên cấp.</li>
             <li><b>Lớn lên:</b> Lv 0–9 bê con, 10–19 bò tơ, 20–30 bò trưởng thành (có sữa!).</li>
-            <li><b>Kiếm xu:</b> bò Lv 20+ vào <b>🏠 chuồng</b> nhấn <kbd>M</kbd> vắt sữa, mang ra <b>🏪 chợ</b> bán.</li>
+            <li><b>Kiếm xu:</b> bò Lv 20+ vào <b>🐄 khu vắt sữa</b> nhấn <kbd>M</kbd> vắt sữa, mang ra <b>🏪 chợ</b> bán.</li>
           </ol>
           <p class="gd-note">Nhấn <kbd>Esc</kbd> mở cài đặt và cửa hàng, <kbd>Tab</kbd> mở túi đồ, <kbd>G</kbd> mở clan. Nhấn <kbd>Enter</kbd> để chat.</p>
         </section>
@@ -114,7 +114,7 @@
                 <kbd>Space</kbd><span>Nhảy</span>
                 <kbd>F</kbd><span>Húc</span>
                 <kbd>E (giữ)</kbd><span>Gặm cỏ / uống nước · mở quầy ở chợ</span>
-                <kbd>M</kbd><span>Vắt sữa (trong chuồng)</span>
+                <kbd>M</kbd><span>Vắt sữa (trong khu vắt sữa)</span>
                 <kbd>Z</kbd><span>Nằm / đứng dậy</span>
                 <kbd>Q</kbd><span>Kêu moo</span>
                 <kbd>Chuột</kbd><span>Kéo xoay camera · lăn để zoom · nhấp bò khác xem thông tin</span>
@@ -161,16 +161,16 @@
           <div class="gd-flow">
             <div><span>🌾</span><b>Ăn no, uống đủ</b><small>Bò Lv 20+ tự ra sữa vào bầu vú (tối đa 10 L)</small></div>
             <i>→</i>
-            <div><span>🏠</span><b>Vắt trong chuồng</b><small>Vào chuồng nhấn M · sữa vào bình (3 bình × 5 L)</small></div>
+            <div><span>🐄</span><b>Vắt ở khu vắt sữa</b><small>Vào trong rào nhấn M · sữa vào bình (3 bình × 5 L)</small></div>
             <i>→</i>
             <div><span>🏪</span><b>Bán ở chợ</b><small>Quầy thu mua sữa · nhấn E · nhận 🪙</small></div>
             <i>→</i>
             <div><span>🎁</span><b>Đổi quà</b><small>Quầy cửa hàng · nhấn E · đồ vào 🎒 túi (Tab)</small></div>
           </div>
           <ul class="gd-list">
-            <li>Chuồng 🏠 và chợ 🏪 ở gần chỗ xuất phát — xem icon trên minimap.</li>
+            <li>Khu vắt sữa 🐄 và chợ 🏪 ở gần chỗ xuất phát — xem icon trên minimap.</li>
             <li>Giá sữa hiện trên bảng ở chợ (do admin đặt). Số xu hiện trên bảng trạng thái.</li>
-            <li>Đường từ chuồng ra chợ có thể gặp bò khác clan húc — chết là <b>mất hết sữa và 50% xu</b>.</li>
+            <li>Đường từ khu vắt sữa ra chợ có thể gặp bò khác clan húc — chết là <b>mất hết sữa và 50% xu</b>.</li>
             <li>Cần đăng nhập để vắt, bán và mua đồ.</li>
           </ul>
         </section>
@@ -330,7 +330,7 @@
             <kbd>G</kbd><span>Quản lý clan</span>
             <kbd>Tab</kbd><span>Túi đồ</span>
             <kbd>/c</kbd><span>Chat riêng trong clan</span>
-            <kbd>M</kbd><span>Vắt sữa (trong chuồng)</span>
+            <kbd>M</kbd><span>Vắt sữa (trong khu vắt sữa)</span>
             <kbd>E (ở chợ)</kbd><span>Bán sữa / mở cửa hàng</span>
             <kbd>Chuột kéo</kbd><span>Xoay camera · lăn: zoom</span>
             <kbd>Nhấp bò khác</kbd><span>Xem thông tin · mời clan</span>
@@ -351,7 +351,7 @@
             <kbd>RB / RT</kbd><span>Húc</span>
             <kbd>D-pad ↑ ↓</kbd><span>Phóng to / thu nhỏ</span>
             <kbd>D-pad ←</kbd><span>Chế độ điện ảnh</span>
-            <kbd>D-pad →</kbd><span>Vắt sữa (trong chuồng)</span>
+            <kbd>D-pad →</kbd><span>Vắt sữa (trong khu vắt sữa)</span>
             <kbd>View / Share</kbd><span>Quản lý clan</span>
             <kbd>Menu / Options</kbd><span>Mở / đóng cài đặt</span>
           </div>

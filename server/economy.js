@@ -64,7 +64,7 @@ function milk(p) {
   const fail = (text) => ({ ok: false, text });
   if (!p.user) return fail('Đăng nhập để vắt và bán sữa.');
   if (levelOf(p.xp) < MILK_MIN_LEVEL) return fail(`Bò cần đạt Lv ${MILK_MIN_LEVEL} mới có sữa.`);
-  if (!inBarn(p.x, p.z, 1)) return fail('Vào trong chuồng mới vắt sữa được.');
+  if (!inBarn(p.x, p.z, 1)) return fail('Vào trong khu vắt sữa (rào gỗ) mới vắt được.');
   if (!p.milkT || Date.now() - p.milkT < (MILK_TIME - 0.6) * 1000) return fail('Vắt từ từ thôi…');
   p.milkT = 0;
   const room = CAPACITY - p.bottles;

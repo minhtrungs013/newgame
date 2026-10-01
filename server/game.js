@@ -227,6 +227,7 @@ function handle(p, text) {
       if (m.a === 'jump' && now - p.lastJump > 450) { p.lastJump = now; broadcast({ t: 'act', id: p.id, a: 'jump' }, p); }
       if (m.a === 'butt' && now - p.lastButt > 700) { p.lastButt = now; broadcast({ t: 'act', id: p.id, a: 'butt' }, p); }
       // life events: eaten by a croc, died, respawned (others only see the animation)
+      if (m.a === 'die' && p.dead) break; // the server already ended this life (headbutted to 0)
       if (['croc', 'die', 'respawn'].includes(m.a) && now - (p.lastLife || 0) > 300) {
         p.lastLife = now;
         if (m.a === 'die') sendDeathLoss(p, eco.deathLoss(p));
@@ -265,7 +266,7 @@ function handle(p, text) {
       target.dirty = true;
       target.conn.send({ t: 'hit', from: p.id, dx: +nx.toFixed(3), dz: +nz.toFixed(3), p: +power.toFixed(2), dmg, hp: +target.health.toFixed(3) });
       if (target.health <= 0) {
-        sendDeathLoss(target, eco.deathLoss(target)); // the server saw it die: don't rely on its client
+        killPlayer(target, 'butt', p.name); // the server saw it die: don't rely on its client to admit it
         p.conn.send({ t: 'sys', text: `💪 Bạn đã húc gục ${target.name}!` });
         broadcast({ t: 'chat', id: 0, name: '', text: `💥 ${target.name} đã bị ${p.name} húc gục`, sys: true });
       }
@@ -407,6 +408,23 @@ function suspicious(p, what) {
   if (now - (p.flagLogT || 0) < 10000) return;
   p.flagLogT = now;
   console.log(`! suspicious ${p.name}${p.user ? ` [${p.user}]` : ''}: ${what} (${p.flags} so far)`);
+}
+
+// end a life on the server (headbutted to 0 health): same as the client's own 'die', but it
+// doesn't need the victim's client to cooperate - a client that ignores it stays dead here anyway
+function killPlayer(p, reason, by) {
+  if (p.dead) return;
+  sendDeathLoss(p, eco.deathLoss(p));
+  const now = Date.now();
+  Object.assign(p, { xp: 0, xpBank: 0, age: 0, xpT: now, food: 0.5, water: 0.7, health: 1 });
+  p.dead = true;
+  p.posReset = true;
+  p.lastLife = now;
+  p.dirty = true;
+  if (p.user) saveProfile(p);
+  p.conn.send({ t: 'die', reason, by });
+  broadcast({ t: 'act', id: p.id, a: 'die' }, p);
+  console.log(`x ${p.name} died (${reason}${by ? ` by ${by}` : ''})`);
 }
 
 function sendDeathLoss(p, loss) {

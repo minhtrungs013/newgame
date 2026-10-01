@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { heightAt } from './terrain.js';
 import { BARN, MARKET, COUNTERS, toWorld } from '../game/config.js';
 
-// The farm near the spawn meadow: a barn (walk in and press M to milk) and a small market
+// The farm near the spawn meadow: a fenced milking pen (walk in and press M to milk) and a small market
 // with a milk-buying stall and a shop stall, each with a shopkeeper.
 
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...extra });
@@ -58,12 +58,12 @@ export class Farm {
     this.colliders = [];
     this.npcs = [];
     this.places = [
-      { x: BARN.x, z: BARN.z, icon: '🏠', name: 'Chuồng bò' },
+      { x: BARN.x, z: BARN.z, icon: '🐄', name: 'Khu vắt sữa' },
       { x: MARKET.x, z: MARKET.z, icon: '🏪', name: 'Chợ' },
     ];
     this._buildBarn();
     this._buildMarket();
-    // keep trees / rocks off the farm, stop grass growing through the barn floor
+    // keep trees / rocks off the farm, stop grass growing through the straw in the pen
     world.reserve(BARN.x, BARN.z, Math.hypot(BARN.w, BARN.d) / 2 + 3);
     world.reserve(MARKET.x, MARKET.z, 9);
     world.addStatic(this.colliders, [{ x: BARN.x, z: BARN.z, r: BARN.d / 2 }]);
@@ -78,111 +78,92 @@ export class Farm {
     }
   }
 
+  // Milking pen: an open-air wooden fence (gap at the front), straw on the ground, a few props,
+  // and a sign planted by the entrance. Fence posts stand on the ground wherever they are.
   _buildBarn() {
-    const { w, d } = BARN, H = 3.4, RIDGE = 5.3, DOOR = 4.2, T = 0.22;
-    // ground under the barn is never perfectly flat: the floor follows it, walls reach below it
-    let lo = Infinity, hi = -Infinity;
-    for (let lx = -w / 2; lx <= w / 2; lx += 1) for (let lz = -d / 2; lz <= d / 2; lz += 1) {
-      const p = toWorld(BARN, lx, lz), h = heightAt(p.x, p.z);
-      lo = Math.min(lo, h); hi = Math.max(hi, h);
-    }
-    const base = hi;
-    const g = new THREE.Group();
-    g.position.set(BARN.x, base, BARN.z);
-    g.rotation.y = BARN.yaw;
-    this.scene.add(g);
-    this.barn = g;
-    const add = (geo, m, x, y, z, ry = 0) => {
-      const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.y = ry;
-      o.castShadow = true; o.receiveShadow = true; g.add(o); return o;
+    const { w, d } = BARN, GATE = 4;
+    const root = new THREE.Group();
+    this.scene.add(root);
+    this.barn = root;
+    const wood = mat(0x8a6038), dark = mat(0x5e4128), hay = mat(0xd8b860);
+    const ground = (lx, lz) => { const p = toWorld(BARN, lx, lz); return { x: p.x, y: heightAt(p.x, p.z), z: p.z }; };
+    // mesh at a pen-space spot, standing on the ground (y = height above it), turned with the pen
+    const place = (geo, m, lx, lz, y = 0, ry = 0) => {
+      const g = ground(lx, lz), o = new THREE.Mesh(geo, m);
+      o.position.set(g.x, g.y + y, g.z); o.rotation.y = BARN.yaw + ry;
+      o.castShadow = true; o.receiveShadow = true; root.add(o); return o;
     };
-    const red = mat(0x9b3324), white = mat(0xece4d4), roof = mat(0x4b4d50, { roughness: 0.7 }), wood = mat(0x7a5634);
-    const foot = lo - base - 0.4; // walls start below the lowest ground
-    const wallH = H - foot;
 
-    // floor: straw on dirt, following the ground
-    const floor = new THREE.PlaneGeometry(w - 0.1, d - 0.1, 18, 22);
+    // straw on the dirt inside the fence, following the ground
+    const floor = new THREE.PlaneGeometry(w - 0.3, d - 0.3, 18, 22);
     floor.rotateX(-Math.PI / 2);
     const fp = floor.attributes.position, col = [], straw = new THREE.Color(0xc8a85a), dirt = new THREE.Color(0x7a6038), c = new THREE.Color();
     for (let i = 0; i < fp.count; i++) {
-      const p = toWorld(BARN, fp.getX(i), fp.getZ(i));
-      fp.setY(i, heightAt(p.x, p.z) - base + 0.04);
-      c.copy(dirt).lerp(straw, 0.45 + 0.55 * Math.abs(Math.sin(fp.getX(i) * 3.1 + fp.getZ(i) * 1.7)));
+      const lx = fp.getX(i), lz = fp.getZ(i), g = ground(lx, lz);
+      fp.setXYZ(i, g.x, g.y + 0.04, g.z);
+      c.copy(dirt).lerp(straw, 0.45 + 0.55 * Math.abs(Math.sin(lx * 3.1 + lz * 1.7)));
       col.push(c.r, c.g, c.b);
     }
     floor.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
     floor.computeVertexNormals();
     const fm = new THREE.Mesh(floor, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-    fm.receiveShadow = true; g.add(fm);
+    fm.receiveShadow = true; root.add(fm);
 
-    // walls (back, sides, front with a wide door)
-    add(new THREE.BoxGeometry(w, wallH, T), red, 0, foot + wallH / 2, -d / 2);
-    for (const s of [1, -1]) add(new THREE.BoxGeometry(T, wallH, d), red, s * w / 2, foot + wallH / 2, 0);
-    const side = (w - DOOR) / 2;
-    for (const s of [1, -1]) add(new THREE.BoxGeometry(side, wallH, T), red, s * (DOOR / 2 + side / 2), foot + wallH / 2, d / 2);
-    add(new THREE.BoxGeometry(DOOR, 0.7, T), red, 0, H - 0.35, d / 2);
-    // white trim: corners, door frame, eaves
-    for (const sx of [1, -1]) for (const sz of [1, -1]) add(new THREE.BoxGeometry(0.3, wallH, 0.3), white, sx * w / 2, foot + wallH / 2, sz * d / 2);
-    for (const s of [1, -1]) add(new THREE.BoxGeometry(0.22, H - 0.7 - foot, 0.32), white, s * DOOR / 2, (H - 0.7 + foot) / 2, d / 2);
-    add(new THREE.BoxGeometry(DOOR + 0.22, 0.22, 0.32), white, 0, H - 0.7, d / 2);
-    // open barn doors with the white X brace
-    for (const s of [1, -1]) {
-      const door = new THREE.Group();
-      door.position.set(s * DOOR / 2, 0, d / 2 + 0.1);
-      door.rotation.y = s * 1.9; // swung open outwards
-      g.add(door);
-      const leaf = new THREE.Mesh(new THREE.BoxGeometry(DOOR / 2, H - 0.75, 0.1), red);
-      leaf.position.set(-s * DOOR / 4, (H - 0.75) / 2, 0); leaf.castShadow = true; door.add(leaf);
-      for (const a of [0.9, -0.9]) {
-        const br = new THREE.Mesh(new THREE.BoxGeometry(0.14, (H - 0.75) * 1.15, 0.12), white);
-        br.position.set(-s * DOOR / 4, (H - 0.75) / 2, 0.02); br.rotation.z = a * 0.62; door.add(br);
+    // fence: posts every ~1.6 m with two rails between them
+    const postGeo = new THREE.BoxGeometry(0.16, 1.35, 0.16); postGeo.translate(0, 0.675, 0);
+    const railGeo = new THREE.BoxGeometry(0.08, 0.11, 1);
+    const a = new THREE.Vector3(), b = new THREE.Vector3();
+    const fence = (ax, az, bx, bz) => {
+      const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 1.6));
+      let prev = null;
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, lx = ax + (bx - ax) * t, lz = az + (bz - az) * t;
+        const g = ground(lx, lz);
+        const post = new THREE.Mesh(postGeo, wood);
+        post.position.set(g.x, g.y - 0.15, g.z); post.rotation.set((Math.random() - 0.5) * 0.06, BARN.yaw, (Math.random() - 0.5) * 0.06);
+        post.castShadow = true; root.add(post);
+        if (prev) {
+          for (const hh of [0.45, 0.95]) {
+            a.set(prev.x, prev.y + hh, prev.z); b.set(g.x, g.y + hh, g.z);
+            const rail = new THREE.Mesh(railGeo, wood);
+            rail.position.copy(a).lerp(b, 0.5); rail.lookAt(b); rail.scale.z = a.distanceTo(b);
+            rail.castShadow = true; root.add(rail);
+          }
+        }
+        prev = g;
       }
-    }
-    // gables + roof
-    const gable = new THREE.Shape();
-    gable.moveTo(-w / 2, 0); gable.lineTo(w / 2, 0); gable.lineTo(0, RIDGE - H); gable.closePath();
-    const gGeo = new THREE.ExtrudeGeometry(gable, { depth: T, bevelEnabled: false });
-    for (const sz of [1, -1]) add(gGeo, red, 0, H, sz * d / 2 - T / 2); // extruded along +z by T
-    const run = w / 2 + 0.45, rise = RIDGE - H + 0.25, len = Math.hypot(run, rise), ang = Math.atan2(rise, run);
-    for (const s of [1, -1]) {
-      const panel = add(new THREE.BoxGeometry(len, 0.16, d + 0.9), roof, s * run / 2, H - 0.2 + rise / 2, 0);
-      panel.rotation.z = -s * ang;
-    }
-    add(new THREE.BoxGeometry(0.3, 0.3, d + 0.9), white, 0, RIDGE + 0.05, 0);
+      this._wallColliders(BARN, ax, az, bx, bz, 0.22);
+    };
+    fence(-w / 2, -d / 2, w / 2, -d / 2);
+    fence(-w / 2, -d / 2, -w / 2, d / 2);
+    fence(w / 2, -d / 2, w / 2, d / 2);
+    fence(-w / 2, d / 2, -GATE / 2, d / 2);
+    fence(GATE / 2, d / 2, w / 2, d / 2);
+    // taller gate posts at the entrance
+    const gatePost = new THREE.BoxGeometry(0.22, 1.8, 0.22); gatePost.translate(0, 0.9, 0);
+    for (const s of [-1, 1]) place(gatePost, dark, s * GATE / 2, d / 2, -0.15);
 
-    // inside: hay bales, bucket & stool, a trough
-    const hay = mat(0xd8b860);
-    for (const [x, z, y] of [[-3.3, -4.3, 0], [-2.1, -4.3, 0], [-2.7, -4.3, 0.55], [3.3, -4.3, 0]]) {
-      const p = toWorld(BARN, x, z);
-      add(new THREE.BoxGeometry(1.1, 0.55, 0.75), hay, x, heightAt(p.x, p.z) - base + 0.28 + y, z);
-      if (!y) this.colliders.push({ x: p.x, z: p.z, r: 0.55 });
+    // inside: hay bales, bucket & milking stool, a water trough
+    for (const [x, z, y] of [[-3.2, -4.2, 0], [-2.0, -4.2, 0], [-2.6, -4.2, 0.55]]) {
+      place(new THREE.BoxGeometry(1.1, 0.55, 0.75), hay, x, z, 0.28 + y);
+      if (!y) { const p = toWorld(BARN, x, z); this.colliders.push({ x: p.x, z: p.z, r: 0.55 }); }
     }
-    const bp = toWorld(BARN, -2.6, 0.5), by = heightAt(bp.x, bp.z) - base;
-    add(new THREE.CylinderGeometry(0.2, 0.16, 0.34, 14, 1, true), mat(0xb8bcc0, { metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide }), -2.6, by + 0.17, 0.5);
-    add(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 14), mat(0xf6f4ee), -2.6, by + 0.28, 0.5); // milk in the bucket
-    add(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12), wood, -3.2, by + 0.42, 0.9); // milking stool
-    for (let i = 0; i < 3; i++) add(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 5), wood, -3.2 + Math.cos(i * 2.1) * 0.15, by + 0.21, 0.9 + Math.sin(i * 2.1) * 0.15);
-    const tp = toWorld(BARN, 3.6, -0.5);
-    add(new THREE.BoxGeometry(0.7, 0.5, 3), wood, 3.6, heightAt(tp.x, tp.z) - base + 0.25, -0.5);
-    add(new THREE.BoxGeometry(0.55, 0.05, 2.8), mat(0x3a6a8a, { roughness: 0.2 }), 3.6, heightAt(tp.x, tp.z) - base + 0.48, -0.5);
-    for (const z of [-1.5, 0, 0.5]) { const p = toWorld(BARN, 3.6, z); this.colliders.push({ x: p.x, z: p.z, r: 0.45 }); }
+    place(new THREE.CylinderGeometry(0.2, 0.16, 0.34, 14, 1, true), mat(0xb8bcc0, { metalness: 0.7, roughness: 0.35, side: THREE.DoubleSide }), -2.6, 0.5, 0.17);
+    place(new THREE.CylinderGeometry(0.17, 0.17, 0.02, 14), mat(0xf6f4ee), -2.6, 0.5, 0.28); // milk in the bucket
+    place(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 12), wood, -3.2, 0.9, 0.42); // stool
+    for (let i = 0; i < 3; i++) place(new THREE.CylinderGeometry(0.03, 0.03, 0.42, 5), wood, -3.2 + Math.cos(i * 2.1) * 0.15, 0.9 + Math.sin(i * 2.1) * 0.15, 0.21);
+    place(new THREE.BoxGeometry(0.7, 0.5, 3), wood, 3.4, -0.5, 0.25);
+    place(new THREE.BoxGeometry(0.55, 0.05, 2.8), mat(0x3a6a8a, { roughness: 0.2 }), 3.4, -0.5, 0.48);
+    for (const z of [-1.5, 0, 0.5]) { const p = toWorld(BARN, 3.4, z); this.colliders.push({ x: p.x, z: p.z, r: 0.45 }); }
 
-    // sign over the door + a lantern that glows at night
-    const { tex } = textTexture(['🥛 CHUỒNG VẮT SỮA', 'Vào trong · nhấn M để vắt'], { bg: '#f2ead8', fg: '#7a2a1c', border: '#7a2a1c' });
-    const sign = add(new THREE.PlaneGeometry(3.2, 1), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }), 0, H + 0.6, d / 2 + 0.14);
-    sign.castShadow = false;
-    this.lanternMat = new THREE.MeshStandardMaterial({ color: 0xffd890, emissive: 0xffb050, emissiveIntensity: 0 });
-    add(new THREE.BoxGeometry(0.22, 0.3, 0.22), this.lanternMat, 0, H - 0.25, 1);
-    this.lamp = new THREE.PointLight(0xffc070, 0, 12, 1.6);
-    this.lamp.position.set(0, H - 0.5, 1);
-    g.add(this.lamp);
-
-    // colliders along the walls, leaving the door open
-    this._wallColliders(BARN, -w / 2, -d / 2, w / 2, -d / 2);
-    this._wallColliders(BARN, -w / 2, -d / 2, -w / 2, d / 2);
-    this._wallColliders(BARN, w / 2, -d / 2, w / 2, d / 2);
-    this._wallColliders(BARN, -w / 2, d / 2, -DOOR / 2 - 0.1, d / 2);
-    this._wallColliders(BARN, DOOR / 2 + 0.1, d / 2, w / 2, d / 2);
+    // sign planted in front of the entrance
+    const { tex } = textTexture(['🥛 KHU VẮT SỮA', 'Vào trong · nhấn M để vắt'], { bg: '#f2ead8', fg: '#7a2a1c', border: '#7a4a22' });
+    const sx = GATE / 2 + 1.5, sz = d / 2 + 1.3;
+    for (const o of [-0.9, 0.9]) place(new THREE.BoxGeometry(0.1, 1.6, 0.1), dark, sx + o, sz, 0.8 - 0.15, -0.35);
+    const board = place(new THREE.BoxGeometry(2.2, 0.75, 0.06), wood, sx, sz, 1.35, -0.35);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.68), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 }));
+    face.position.z = 0.032; board.add(face);
+    { const p = toWorld(BARN, sx, sz); this.colliders.push({ x: p.x, z: p.z, r: 0.45 }); }
   }
 
   _stall(lx, title, sub, awningA, awningB, npc) {
@@ -239,8 +220,8 @@ export class Farm {
     tex.needsUpdate = true;
   }
 
-  // NPCs idle, look at / wave to a cow standing at their counter; lantern at night
-  update(dt, time, cowPos, night) {
+  // NPCs idle, look at / wave to a cow standing at their counter
+  update(dt, time, cowPos) {
     for (const n of this.npcs) {
       const near = Math.hypot(cowPos.x - n.world.x, cowPos.z - n.world.z) < 4.5;
       n.body.position.y = 0.8 + Math.sin(time * 1.6 + n.phase) * 0.012;
@@ -248,7 +229,5 @@ export class Farm {
       const wave = near ? Math.sin(time * 7) * 0.35 + 2.5 : 0.1 + Math.sin(time + n.phase) * 0.05;
       n.arms[0].rotation.z += (wave - n.arms[0].rotation.z) * Math.min(1, dt * 6);
     }
-    this.lanternMat.emissiveIntensity = 0.4 + night * 1.8;
-    this.lamp.intensity = 1.5 + night * 4.5; // a little light inside by day too
   }
 }

@@ -258,6 +258,9 @@ export class Net {
         if (r) this.h.onRemoteAct(r, m.a);
         break;
       }
+      case 'die': // the server ended our life (e.g. headbutted to 0 health)
+        this.h.onServerDeath(m);
+        break;
       case 'hit': {
         // we got headbutted
         const r = this.remotes.get(m.from);
